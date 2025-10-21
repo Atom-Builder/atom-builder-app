@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    // --- FIX STARTS HERE ---
+    // We are telling TypeScript that the base for our module paths is the root directory.
+    "baseUrl": ".",
+    // We are explicitly mapping the "@/*" alias to the "src/*" directory.
+    "paths": {
+      "@/*": [
+        "src/*"
+      ]
+    }
+    // --- FIX ENDS HERE ---
+    ,
+    "target": "ES2017"
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
