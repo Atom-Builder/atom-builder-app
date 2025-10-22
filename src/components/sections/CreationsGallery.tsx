@@ -1,157 +1,130 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { useBuilder } from '@/hooks/useBuilder';
-import { collection, onSnapshot, query, deleteDoc, doc, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
-import { LogIn, Trash2, Eye, Loader2, Frown } from 'lucide-react';
+import { db, useAuth } from '@/hooks/useAuth';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
+import { AtomConfig } from '@/hooks/useBuilder';
+import AtomPreview from '@/components/core/AtomPreview'; // <-- 1. IMPORT THE NEW PREVIEW
 import Link from 'next/link';
 
-// --- 1. Define the shape of the data from Firestore ---
-interface Creation extends DocumentData {
-  id: string; // The Firestore document ID
-  name: string;
-  atom_config: {
-    protons: number;
-    neutrons: number;
-    electrons: number;
-  };
-  is_antimatter: boolean;
-  // is_public is not needed here, as this is the private gallery
+// Define the shape of the saved creation
+interface Creation extends AtomConfig {
+  id: string;
+  userId: string;
+  userName: string;
+  publishedAt: any; // Firestore timestamp
+  isPublic: boolean;
 }
 
+// Re-usable Atom Card
+const AtomCard = ({ creation }: { creation: Creation }) => {
+  const queryParams = {
+    p: creation.protons,
+    n: creation.neutrons,
+    e: creation.electrons,
+  };
+
+  return (
+    <Link href={{ pathname: '/builder', query: queryParams }}>
+      <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg overflow-hidden border border-gray-700/50 transition-all duration-300 hover:border-cyan-500/50 hover:shadow-2xl hover:shadow-cyan-500/20 h-full flex flex-col">
+        <div className="w-full h-48 flex-shrink-0">
+           {/* 2. USE THE NEW PREVIEW COMPONENT */}
+          <AtomPreview p={creation.protons} n={creation.neutrons} e={creation.electrons} />
+        </div>
+        <div className="p-4 flex-grow flex flex-col">
+          <h3 className="text-xl font-bold font-orbitron text-white truncate">
+            {creation.atomName || `Element-${creation.protons}`}
+          </h3>
+          <p className="text-sm text-gray-400">
+            {creation.isPublic ? 'Public' : 'Private'}
+          </p>
+          <div className="flex-grow"></div>
+          <div className="flex justify-between text-xs mt-3 text-gray-300 pt-3 border-t border-gray-700">
+            <span>{creation.protons} P</span>
+            <span>{creation.neutrons} N</span>
+            <span>{creation.electrons} E</span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+};
+
 export default function CreationsGallery() {
-  const { db, userId, appId, user, loading: authLoading } = useAuth();
-  const { loadPreset } = useBuilder();
-  
+  const { user } = useAuth();
   const [creations, setCreations] = useState<Creation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- 2. REAL-TIME FIRESTORE LISTENER ---
+  // --- 3. THIS FETCH LOGIC IS NOW SELF-CONTAINED ---
+  // It no longer needs useBuilder()
   useEffect(() => {
-    if (!db || !userId || !appId || !user || user.isAnonymous) {
+    if (!user || user.isAnonymous) {
       setLoading(false);
-      return; // Not ready to fetch or user is anonymous
+      return; // Don't fetch if user isn't logged in
     }
 
     setLoading(true);
-    // Path to the user's private creations
-    const collectionPath = `artifacts/${appId}/users/${userId}/creations`;
-    const q = query(collection(db, collectionPath));
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const creationsCol = collection(db, `artifacts/${appId}/users/${user.uid}/creations`);
+    
+    // Query for this user's creations, order by newness
+    const q = query(
+      creationsCol,
+      orderBy("publishedAt", "desc")
+    );
 
-    // onSnapshot creates a real-time subscription
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const creationsData: Creation[] = [];
-      querySnapshot.forEach((doc: QueryDocumentSnapshot) => {
-        creationsData.push({ id: doc.id, ...doc.data() } as Creation);
-      });
+    // Use onSnapshot for real-time updates
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const creationsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Creation));
       setCreations(creationsData);
       setLoading(false);
     }, (error) => {
-      console.error("Error listening to creations:", error);
+      console.error("Error fetching user creations: ", error);
       setLoading(false);
     });
 
-    // Clean up the subscription on unmount
+    // Clean up the listener on component unmount
     return () => unsubscribe();
 
-  }, [db, userId, appId, user]); // Re-run if auth state changes
+  }, [user]); // Re-run when user changes
 
-  // --- 3. REAL DELETE FUNCTION ---
-  const handleDelete = async (id: string, name: string) => {
-    if (!db || !userId || !appId) return;
-
-    if (confirm(`Are you sure you want to delete "${name}"? This cannot be undone.`)) {
-      try {
-        const docPath = `artifacts/${appId}/users/${userId}/creations/${id}`;
-        await deleteDoc(doc(db, docPath));
-        console.log(`Document ${id} deleted.`);
-      } catch (error) {
-        console.error("Error deleting document:", error);
-        alert('Error: Could not delete creation.');
-      }
-    }
-  };
-
-  // --- 4. RENDER STATES ---
-  if (loading || authLoading) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center text-cyan-400 p-10">
-        <Loader2 className="w-10 h-10 animate-spin mr-3" />
-        <span className="text-xl">Loading Your Creations...</span>
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="w-12 h-12 text-cyan-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || user.isAnonymous) {
+    return (
+      <div className="text-center">
+        <p className="text-xl text-gray-400">Please sign in to view your saved creations.</p>
       </div>
     );
   }
 
   if (creations.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center p-10 bg-gray-900/50 border border-gray-700 rounded-xl">
-        <Frown className="w-16 h-16 text-gray-500 mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">No Creations Found</h2>
-        <p className="text-gray-400 mb-6 max-w-md">
-          You haven't saved any private atoms yet. Go to the builder to create one!
-        </p>
-        <Link 
-          href="/builder"
-          className="flex items-center justify-center px-6 py-3 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white text-lg font-semibold transition-all"
-        >
-          Go to Builder
+     return (
+      <div className="text-center">
+        <p className="text-xl text-gray-400">You haven't saved any creations yet.</p>
+         <Link href="/builder">
+            <span className="mt-4 inline-block bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 px-6 rounded-md transition-all">
+                Start Building
+            </span>
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       {creations.map((creation) => (
-        <div 
-          key={creation.id} 
-          className="bg-gray-900/70 border border-gray-700/50 rounded-xl shadow-lg p-6
-                    flex flex-col justify-between transition-all duration-300
-                    hover:border-cyan-500/50 hover:shadow-cyan-500/10"
-        >
-          <div>
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-2xl font-orbitron font-bold text-white truncate pr-2">
-                {creation.name}
-              </h3>
-              <button 
-                onClick={() => handleDelete(creation.id, creation.name)}
-                className="text-gray-500 hover:text-red-400 transition-colors"
-                title="Delete Creation"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </div>
-            
-            {/* Atom Info */}
-            <div className="text-sm text-gray-400 space-y-1 mb-4">
-              <p>Protons: <span className="font-bold text-red-400">{creation.atom_config.protons}</span></p>
-              <p>Neutrons: <span className="font-bold text-purple-400">{creation.atom_config.neutrons}</span></p>
-              <p>Electrons: <span className="font-bold text-cyan-400">{creation.atom_config.electrons}</span></p>
-              {creation.is_antimatter && (
-                <p className="font-bold text-yellow-400">Antimatter Atom</p>
-              )}
-            </div>
-          </div>
-          
-          {/* Action Button */}
-          <Link 
-            href={{
-              pathname: '/builder',
-              query: { 
-                p: creation.atom_config.protons, 
-                n: creation.atom_config.neutrons,
-                e: creation.atom_config.electrons,
-              }
-            }}
-            onClick={() => loadPreset(creation.atom_config, creation.is_antimatter)}
-            className="w-full flex items-center justify-center px-4 py-2 rounded-md bg-cyan-600/50 hover:bg-cyan-600/70 text-cyan-200 text-sm font-semibold transition-all"
-          >
-            <Eye className="w-4 h-4 mr-2" />
-            Load in Builder
-          </Link>
-        </div>
+        <AtomCard key={creation.id} creation={creation} />
       ))}
     </div>
   );

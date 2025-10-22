@@ -1,24 +1,25 @@
-'use client';
+import React, { Suspense } from 'react';
+import BuilderLayout from '@/components/layout/BuilderLayout';
+import { BuilderProvider } from '@/hooks/useBuilder';
 
-import BuilderLayout from "@/components/layout/BuilderLayout";
-import CreationsGallery from "@/components/sections/CreationsGallery";
-import { BuilderProvider } from "@/hooks/useBuilder";
-
-// This is the new page for /creations
-// It will display the gallery of a user's saved atoms.
-export default function CreationsPage() {
+// This is a simple wrapper component that ensures we are a 'use client'
+// context, which is required for the BuilderProvider.
+const BuilderClientWrapper = () => {
+  'use client'; // This component and its children are client-side
   return (
-    // We wrap this in BuilderProvider so the "Load in Builder"
-    // button in the gallery can set the atom state.
     <BuilderProvider>
-      <div className="container mx-auto px-4 py-12">
-        <h1 className="text-5xl font-bold font-orbitron text-center mb-12">
-          <span className="text-cyan-400">My</span> Creations
-        </h1>
-        
-        {/* We render the main gallery component here */}
-        <CreationsGallery />
-      </div>
+      <BuilderLayout />
     </BuilderProvider>
   );
+};
+
+// We wrap the client component in a Suspense boundary
+// This is required for components that use useSearchParams()
+export default function BuilderPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen w-full items-center justify-center text-white bg-slate-950">Loading Atom...</div>}>
+      <BuilderClientWrapper />
+    </Suspense>
+  );
 }
+

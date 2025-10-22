@@ -1,24 +1,27 @@
 'use client';
 
-import BuilderLayout from "@/components/layout/BuilderLayout";
-import { Suspense } from 'react'; // Import Suspense
+// This is the correct code for your HOMEPAGE.
+// It contains all the sections for the landing page.
 
-// A simple loading fallback component
-const BuilderLoading = () => (
-  <div className="flex items-center justify-center h-full text-cyan-400 text-2xl">
-    Loading Atom Builder...
-  </div>
-);
+import Hero from '@/components/sections/Hero';
+import BuilderSection from '@/components/sections/BuilderSection';
+import PeriodicTableSection from '@/components/sections/PeriodicTableSection';
+import AntimatterHubSection from '@/components/sections/AntimatterHubSection';
+import CommunityGallerySection from '@/components/sections/CommunityGallerySection';
 
-const BuilderPage = () => {
+export default function Home() {
   return (
-    // We must wrap the component that uses useSearchParams in a Suspense boundary
-    // In our case, BuilderLayout -> BuilderProvider -> useSearchParams
-    <Suspense fallback={<BuilderLoading />}>
-      <BuilderLayout />
-    </Suspense>
-  );
-};
+    <main className="flex flex-col">
+      {/* This radial gradient creates the "glow" background */}
+      <div className="absolute inset-0 -z-10 h-full w-full bg-slate-950 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"></div>
 
-export default BuilderPage;
+      <Hero />
+      <BuilderSection />
+      <PeriodicTableSection />
+      <AntimatterHubSection />
+      <CommunityGallerySection />
+
+    </main>
+  );
+}
 
