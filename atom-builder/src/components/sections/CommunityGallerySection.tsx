@@ -1,80 +1,165 @@
-import { Search, SlidersHorizontal } from 'lucide-react';
-import React from 'react';
+'use client';
 
-// Placeholder data for the gallery cards
-const placeholderCreations = [
-    { user: 'QuantumQuasar', name: 'Stable Helium-8' },
-    { user: 'NeutronNora', name: 'Vibrant Neon' },
-    { user: 'ProtonPete', name: 'Gilded Gold' },
-    { user: 'ElectronEve', name: 'Anti-Hydrogen' },
-    { user: 'AtomicArchitect', name: 'Glowing Oganesson' },
-    { user: 'MoleculeMaker', name: 'Carbon Diamond Lattice' },
-];
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { useBuilder } from '@/hooks/useBuilder';
+import { collection, onSnapshot, query, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import { Loader2, Eye, User, Zap, Frown } from 'lucide-react';
+import Link from 'next/link';
 
-// A reusable card component for a single atom creation
-const AtomCard = ({ user, name }: { user: string; name: string }) => (
-    <div className="group relative aspect-square border border-purple-500/30 rounded-lg bg-black/40 p-4 flex flex-col justify-end overflow-hidden transition-all duration-300 hover:border-purple-500">
-        {/* Placeholder for the 3D atom thumbnail */}
-        <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-2/3 h-2/3 rounded-full bg-purple-900/50 blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-            <div className="w-1/2 h-1/2 rounded-full bg-purple-500/50 blur-lg absolute"></div>
-        </div>
-        
-        {/* Card Content */}
-        <div className="relative z-10">
-            <h3 className="font-bold text-white truncate">{name}</h3>
-            <p className="text-sm text-gray-400">by {user}</p>
-        </div>
-        
-        {/* Hover Glow Effect */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-500/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-    </div>
-);
+// --- 1. Define the shape of the public data from Firestore ---
+interface PublicCreation extends DocumentData {
+  id: string; // The Firestore document ID
+  name: string;
+  username: string; // Added by our save function
+  atom_config: {
+    protons: number;
+    neutrons: number;
+    electrons: number;
+  };
+  is_antimatter: boolean;
+  // We know is_public is true because it's in this collection
+}
 
 export default function CommunityGallerySection() {
-    return (
-        <section id="community-gallery" className="py-20 bg-black/20">
-            <div className="container mx-auto px-6">
-                {/* Section Header */}
-                <div className="text-center mb-12">
-                    <h2 className="text-4xl md:text-5xl font-bold font-orbitron">
-                        <span className="text-purple-400">🌐 Community</span> Creations
-                    </h2>
-                    <p className="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
-                        Discover atoms designed by other creators. View, remix, and share your own unique designs.
-                    </p>
-                </div>
+  const { db, appId, loading: authLoading } = useAuth();
+  const { loadPreset } = useBuilder(); // We use this to load the atom
+  
+  const [creations, setCreations] = useState<PublicCreation[]>([]);
+  const [loading, setLoading] = useState(true);
 
-                {/* Search and Filter Bar */}
-                <div className="max-w-4xl mx-auto mb-8">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <div className="relative flex-grow">
-                            <input 
-                                type="text"
-                                placeholder="Search for atoms, elements, or users..."
-                                className="w-full bg-gray-800/50 border border-gray-700 rounded-md py-3 pl-12 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            />
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
-                        </div>
-                        <button className="flex-shrink-0 bg-gray-800/50 border border-gray-700 rounded-md px-4 py-3 text-white flex items-center justify-center gap-2 hover:bg-gray-700/70 transition-colors">
-                            <SlidersHorizontal size={20} />
-                            <span className="hidden sm:inline">Filters</span>
-                        </button>
+  // --- 2. REAL-TIME PUBLIC LISTENER ---
+  useEffect(() => {
+    if (!db || !appId) {
+      if (!authLoading) setLoading(false);
+      return; // Not ready to fetch
+    }
+
+    setLoading(true);
+    // Path to the PUBLIC creations
+    const collectionPath = `artifacts/${appId}/public/data/creations`;
+    const q = query(collection(db, collectionPath));
+
+    // onSnapshot creates a real-time subscription
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const creationsData: PublicCreation[] = [];
+      querySnapshot.forEach((doc: QueryDocumentSnapshot) => {
+        creationsData.push({ id: doc.id, ...doc.data() } as PublicCreation);
+      });
+      // Sort by username or a timestamp if we add one later
+      setCreations(creationsData.sort((a, b) => (a.username || '').localeCompare(b.username || '')));
+      setLoading(false);
+    }, (error) => {
+      console.error("Error listening to public creations:", error);
+      setLoading(false);
+    });
+
+    // Clean up the subscription on unmount
+    return () => unsubscribe();
+
+  }, [db, appId, authLoading]); // Re-run if auth state changes
+
+  return (
+    <section id="community-gallery" className="py-20 bg-gray-950/50">
+      <div className="container mx-auto px-4">
+        {/* Section Header */}
+        <div className="text-center mb-12">
+          <h2 className="text-4xl md:text-5xl font-bold font-orbitron">
+            <span className="text-cyan-400">🌐 Community</span> Creations
+          </h2>
+          <p className="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
+            Discover atoms designed by other creators. View, remix, and share your own.
+          </p>
+        </div>
+
+        {/* Filters (Mock) */}
+        <div className="flex justify-center flex-wrap gap-2 md:gap-4 mb-8">
+          <input 
+            type="text" 
+            placeholder="Search creations..." 
+            className="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyan-500" 
+          />
+          <button className="px-4 py-2 bg-gray-800/50 text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-700/70">Popular</button>
+          <button className="px-4 py-2 bg-gray-800/50 text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-700/70">Newest</button>
+          <button className="px-4 py-2 bg-gray-800/50 text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-700/70">Antimatter</button>
+        </div>
+
+        {/* --- 3. GALLERY GRID --- */}
+        {loading ? (
+          <div className="flex items-center justify-center text-cyan-400 p-10">
+            <Loader2 className="w-10 h-10 animate-spin mr-3" />
+            <span className="text-xl">Loading Public Gallery...</span>
+          </div>
+        ) : creations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-center p-10 bg-gray-900/50 border border-gray-700 rounded-xl">
+            <Frown className="w-16 h-16 text-gray-500 mb-4" />
+            <h2 className="text-2xl font-semibold mb-2">Gallery is Empty</h2>
+            <p className="text-gray-400 mb-6 max-w-md">
+              No one has published a creation yet. Be the first!
+            </p>
+            <Link 
+              href="/builder"
+              className="flex items-center justify-center px-6 py-3 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white text-lg font-semibold transition-all"
+            >
+              Go to Builder
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {creations.map((creation) => (
+              <div 
+                key={creation.id} 
+                className="bg-gray-900/70 border border-gray-700/50 rounded-xl shadow-lg p-6
+                          flex flex-col justify-between transition-all duration-300
+                          hover:border-cyan-500/50 hover:shadow-cyan-500/10"
+              >
+                <div>
+                  {/* Header with Name and User */}
+                  <div className="mb-4">
+                    <h3 className="text-2xl font-orbitron font-bold text-white truncate">
+                      {creation.name}
+                    </h3>
+                    <div className="flex items-center text-sm text-cyan-300">
+                      <User className="w-4 h-4 mr-2" />
+                      <span>{creation.username || 'Anonymous'}</span>
                     </div>
+                  </div>
+                  
+                  {/* Atom Info */}
+                  <div className="text-sm text-gray-400 space-y-1 mb-4">
+                    <p>Protons: <span className="font-bold text-red-400">{creation.atom_config.protons}</span></p>
+                    <p>Neutrons: <span className="font-bold text-purple-400">{creation.atom_config.neutrons}</span></p>
+                    <p>Electrons: <span className="font-bold text-cyan-400">{creation.atom_config.electrons}</span></p>
+                    {creation.is_antimatter && (
+                      <p className="font-bold text-yellow-400 flex items-center">
+                        <Zap className="w-4 h-4 mr-1"/> Antimatter Atom
+                      </p>
+                    )}
+                  </div>
                 </div>
-
-                {/* Gallery Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
-                    {placeholderCreations.map((creation, index) => (
-                        <AtomCard key={index} user={creation.user} name={creation.name} />
-                    ))}
-                     {/* Placeholder card to indicate more content */}
-                    <div className="aspect-square border-2 border-dashed border-gray-800 rounded-lg flex items-center justify-center">
-                        <p className="text-gray-600">More Creations Coming Soon...</p>
-                    </div>
-                </div>
-
-            </div>
-        </section>
-    );
+                
+                {/* Action Button */}
+                <Link 
+                  href={{
+                    pathname: '/builder',
+                    query: { 
+                      p: creation.atom_config.protons, 
+                      n: creation.atom_config.neutrons,
+                      e: creation.atom_config.electrons,
+                    }
+                  }}
+                  onClick={() => loadPreset(creation.atom_config, creation.is_antimatter)}
+                  className="w-full flex items-center justify-center px-4 py-2 rounded-md bg-cyan-600/50 hover:bg-cyan-600/70 text-cyan-200 text-sm font-semibold transition-all"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  View & Remix in Builder
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
+

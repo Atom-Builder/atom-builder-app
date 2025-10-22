@@ -4,121 +4,245 @@ import React, {
   createContext, 
   useContext, 
   useState, 
-  useMemo,
-  ReactNode
+  useEffect, 
+  useMemo, 
+  ReactNode,
+  useCallback
 } from 'react';
-import { periodicTable, ElementData } from '@/data/periodicTable';
 import { useSearchParams } from 'next/navigation';
+import { periodicTableData } from '@/data/periodicTable'; // Ensure this is the full 118-element data
 
-// --- NEW STATE ---
-export type VizMode = 'bohr' | 'cloud';
+// --- 1. DEFINE TYPES ---
 
-// Define the shape of our atom's state
-export interface AtomState {
+// The core state of the atom
+interface AtomState {
   protons: number;
   neutrons: number;
   electrons: number;
 }
 
-// Define the derived state we want our hook to provide
-export interface DerivedAtomInfo {
-  element: ElementData | null;
-  atomicMass: number;
-  charge: number;
-  chargeLabel: string; // e.g., "Anion", "Cation", "Neutral"
+// The output of our "AI" analysis
+type StabilityStatus = 'Stable' | 'Unstable' | 'Radioactive' | 'Predicted';
+interface StabilityAnalysis {
+  status: StabilityStatus;
+  reason: string;
 }
 
-// Define the shape of the context
+// The comprehensive info object
+interface AtomInfo {
+  symbol: string;
+  name: string;
+  mass: number | string;
+  charge: number;
+  stability: StabilityAnalysis;
+}
+
+// The context's value
 interface BuilderContextType {
   atom: AtomState;
-  setAtom: React.Dispatch<React.SetStateAction<AtomState>>;
-  derivedInfo: DerivedAtomInfo;
-  // --- NEW STATE & FUNCTIONS ---
+  info: AtomInfo;
   isAntimatter: boolean;
-  setIsAntimatter: React.Dispatch<React.SetStateAction<boolean>>;
-  vizMode: VizMode;
-  setVizMode: React.Dispatch<React.SetStateAction<VizMode>>;
+  isStableMode: boolean; // <-- NEW
+  vizMode: 'bohr' | 'cloud';
+  isPublic: boolean;
+  
+  // Setters
+  setProtons: (p: number) => void;
+  setNeutrons: (n: number) => void;
+  setElectrons: (e: number) => void;
+  setIsAntimatter: (isAnti: boolean) => void;
+  setVizMode: (mode: 'bohr' | 'cloud') => void;
+  setIsPublic: (isPublic: boolean) => void;
+  toggleStableMode: () => void; // <-- NEW
   resetAtom: () => void;
+  loadPreset: (config: AtomState, isAnti?: boolean) => void;
 }
 
-// Create the context
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
-// Define the props for our provider
-interface BuilderProviderProps {
-  children: ReactNode;
-}
+// --- 2. "AI" LOGIC ---
 
-const DEFAULT_ATOM: AtomState = { protons: 1, neutrons: 0, electrons: 1 };
+/**
+ * Predicts the most stable number of neutrons for a given number of protons.
+ * This is a simplified physics model (the "Band of Stability").
+ */
+const getStableNeutronCount = (protons: number): number => {
+  if (protons === 1) return 0; // Hydrogen-1 (Protium)
+  if (protons === 2) return 2; // Helium-4
+  if (protons <= 20) {
+    // For light elements, N ≈ Z
+    const el = periodicTableData[protons];
+    if (el) return Math.round(Number(el.mass) - protons);
+    return protons; // Fallback
+  }
+  if (protons <= 82) {
+    // For heavier elements, N/Z ratio increases to ~1.5
+    return Math.round(protons * (1.25 + (protons / 100)));
+  }
+  // For Z > 82, all isotopes are radioactive, but we can pick the longest-lived one
+  const el = periodicTableData[protons];
+  if (el) return Math.round(Number(String(el.mass).replace('(', '').replace(')', '')) - protons);
+  
+  // Prediction for unknown
+  return Math.round(protons * 1.5);
+};
 
-// Helper function to get initial state from URL params
-const getInitialState = (searchParams: URLSearchParams): AtomState => {
-  const protons = parseInt(searchParams.get('protons') || '1', 10);
-  const neutrons = parseInt(searchParams.get('neutrons') || '0', 10);
-  const electrons = parseInt(searchParams.get('electrons') || '1', 10);
+/**
+ * Our "AI" for analyzing atomic stability.
+ * This is a simplified model based on the N/Z ratio.
+ */
+const calculateStability = (protons: number, neutrons: number): StabilityAnalysis => {
+  if (protons > 118) {
+    return { status: 'Predicted', reason: 'Hypothetical element beyond the known periodic table.' };
+  }
+  if (protons > 82) {
+    return { status: 'Radioactive', reason: 'All elements with Z > 82 are naturally radioactive.' };
+  }
 
-  // Add validation to keep numbers reasonable
-  const validProtons = Math.max(1, Math.min(protons, 118));
-  const validNeutrons = Math.max(0, Math.min(neutrons, 177));
-  const validElectrons = Math.max(0, Math.min(electrons, 118));
+  const stableN = getStableNeutronCount(protons);
+  const tolerance = protons <= 20 ? 1 : Math.round(protons * 0.05); // Looser tolerance for heavy atoms
+
+  if (Math.abs(neutrons - stableN) <= tolerance) {
+    return { status: 'Stable', reason: `N/Z ratio (${(neutrons/protons).toFixed(2)}) is within the band of stability.` };
+  } else if (neutrons < stableN) {
+    return { status: 'Unstable', reason: 'Neutron-deficient (proton-rich). Likely to decay via positron emission or electron capture.' };
+  } else {
+    return { status: 'Unstable', reason: 'Neutron-rich. Likely to decay via beta emission.' };
+  }
+};
+
+/**
+ * Generates IUPAC systematic names for undiscovered elements.
+ */
+const predictElement = (protons: number): Omit<AtomInfo, 'charge' | 'stability'> => {
+  const digits = String(protons).split('');
+  const names = ['nil', 'un', 'bi', 'tri', 'quad', 'pent', 'hex', 'sept', 'oct', 'enn'];
+  const name = digits.map(d => names[Number(d)]).join('') + 'ium';
+  const symbol = digits.map(d => names[Number(d)][0]).join('').toUpperCase();
 
   return {
-    protons: validProtons,
-    neutrons: validNeutrons,
-    electrons: validElectrons,
+    symbol: symbol,
+    name: name,
+    mass: '?',
   };
 };
 
-// The provider component
-export const BuilderProvider = ({ children }: BuilderProviderProps) => {
-  const searchParams = useSearchParams();
-  const initialState = getInitialState(searchParams);
 
-  const [atom, setAtom] = useState<AtomState>(initialState);
-  // --- NEW STATE ---
+// --- 3. THE PROVIDER ---
+
+export const BuilderProvider = ({ children }: { children: ReactNode }) => {
+  const [atom, setAtom] = useState<AtomState>({ protons: 1, neutrons: 0, electrons: 1 });
   const [isAntimatter, setIsAntimatter] = useState(false);
-  const [vizMode, setVizMode] = useState<VizMode>('bohr');
+  const [vizMode, setVizMode] = useState<'bohr' | 'cloud'>('bohr');
+  const [isPublic, setIsPublic] = useState(false);
+  const [isStableMode, setIsStableMode] = useState(false); // <-- NEW STATE
 
-  // This effect will re-sync the state if the URL params change
-  React.useEffect(() => {
-    setAtom(getInitialState(searchParams));
-  }, [searchParams]);
+  // --- 4. URL PRESET LOADER ---
+  // This effect runs once on page load to check for URL params
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const p = searchParams.get('p');
+    const n = searchParams.get('n');
+    const e = searchParams.get('e');
+    if (p) {
+      const protons = parseInt(p, 10);
+      const neutrons = n ? parseInt(n, 10) : getStableNeutronCount(protons);
+      const electrons = e ? parseInt(e, 10) : protons;
+      setAtom({ protons, neutrons, electrons });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
 
-  // --- NEW FUNCTION ---
-  const resetAtom = () => {
-    setAtom(DEFAULT_ATOM);
-    // Note: We don't reset antimatter or viz mode, as those are user preferences
+  // --- 5. "AI"-POWERED INFO OBJECT ---
+  // This recalculates on every state change
+  const info = useMemo((): AtomInfo => {
+    const { protons, neutrons, electrons } = atom;
+    const charge = protons - electrons;
+    const stability = calculateStability(protons, neutrons);
+    
+    let elementData: Omit<AtomInfo, 'charge' | 'stability'>;
+
+    if (protons > 118) {
+      elementData = predictElement(protons);
+    } else {
+      const el = periodicTableData[protons] || { symbol: '?', name: 'Unknown', mass: '?' };
+      elementData = { symbol: el.symbol, name: el.name, mass: el.mass };
+    }
+    
+    return { ...elementData, charge, stability };
+  }, [atom]);
+  
+  // --- 6. ATOM SETTERS (WITH STABLE MODE LOGIC) ---
+  
+  const setProtons = useCallback((p: number) => {
+    if (p < 1) p = 1;
+    if (p > 150) p = 150; // Allow prediction up to 150
+    setAtom(prev => {
+      const newNeutrons = isStableMode ? getStableNeutronCount(p) : prev.neutrons;
+      const newElectrons = (prev.electrons === prev.protons) ? p : prev.electrons; // Auto-update electrons if atom was neutral
+      return { protons: p, neutrons: newNeutrons, electrons: newElectrons };
+    });
+  }, [isStableMode]);
+
+  const setNeutrons = useCallback((n: number) => {
+    if (n < 0) n = 0;
+    if (n > 250) n = 250;
+    setIsStableMode(false); // Manually changing neutrons turns off stable mode
+    setAtom(prev => ({ ...prev, neutrons: n }));
+  }, []);
+
+  const setElectrons = useCallback((e: number) => {
+    if (e < 0) e = 0;
+    if (e > 150) e = 150;
+    setAtom(prev => ({ ...prev, electrons: e }));
+  }, []);
+
+  const toggleStableMode = () => {
+    setIsStableMode(prevMode => {
+      const newMode = !prevMode;
+      if (newMode) {
+        // When turning stable mode ON, snap to the stable neutron count
+        setAtom(prev => ({ ...prev, neutrons: getStableNeutronCount(prev.protons) }));
+      }
+      return newMode;
+    });
   };
 
-  // Calculate the derived info whenever the atom state changes
-  const derivedInfo = useMemo((): DerivedAtomInfo => {
-    const { protons, neutrons, electrons } = atom;
-    const element = periodicTable[protons] || null;
-    const atomicMass = protons + neutrons;
-    
-    // --- UPDATED CHARGE LOGIC ---
-    // Protons are +1, Electrons are -1
-    // For antimatter, Protons (anti-protons) are -1, Electrons (positrons) are +1
-    const charge = isAntimatter ? (electrons - protons) : (protons - electrons);
-    
-    let chargeLabel = "Neutral";
-    if (charge > 0) chargeLabel = isAntimatter ? "Anti-Anion" : "Cation";
-    if (charge < 0) chargeLabel = isAntimatter ? "Anti-Cation" : "Anion";
+  const resetAtom = () => {
+    setAtom({ protons: 1, neutrons: 0, electrons: 1 });
+    setIsAntimatter(false);
+    setVizMode('bohr');
+    setIsPublic(false);
+    setIsStableMode(false);
+  };
+  
+  const loadPreset = (config: AtomState, isAnti: boolean = false) => {
+    setAtom(config);
+    setIsAntimatter(isAnti);
+    setIsStableMode(false); // Turn off stable mode when loading a preset
+  };
 
-    return { element, atomicMass, charge, chargeLabel };
-  }, [atom, isAntimatter]); // Re-calculate when antimatter mode changes
-
+  // --- 7. CONTEXT VALUE ---
   const value = useMemo(() => ({
     atom,
-    setAtom,
-    derivedInfo,
-    // --- PASS NEW STATE & FUNCTIONS ---
+    info,
     isAntimatter,
-    setIsAntimatter,
+    isStableMode,
     vizMode,
+    isPublic,
+    setProtons,
+    setNeutrons,
+    setElectrons,
+    setIsAntimatter,
     setVizMode,
+    setIsPublic,
+    toggleStableMode,
     resetAtom,
-  }), [atom, derivedInfo, isAntimatter, vizMode]);
+    loadPreset
+  }), [
+    atom, info, isAntimatter, isStableMode, vizMode, isPublic, 
+    setProtons, setNeutrons, setElectrons, toggleStableMode
+  ]);
 
   return (
     <BuilderContext.Provider value={value}>
@@ -127,7 +251,6 @@ export const BuilderProvider = ({ children }: BuilderProviderProps) => {
   );
 };
 
-// The custom hook that our components will use
 export const useBuilder = (): BuilderContextType => {
   const context = useContext(BuilderContext);
   if (context === undefined) {
