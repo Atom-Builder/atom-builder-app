@@ -1,14 +1,25 @@
 'use client';
 
-import BuilderLayout from '@/components/layout/BuilderLayout';
 import React from 'react';
+import { BuilderProvider } from '@/hooks/useBuilder';
+import ControlsPanel from '@/components/core/ControlsPanel';
+import AtomViewport from '@/components/core/AtomViewport';
 
-const BuilderPage = () => {
+export default function BuilderLayout() {
   return (
-    <main className="h-screen bg-black text-white overflow-hidden">
-      <BuilderLayout />
-    </main>
-  );
-};
+    // Wrap the entire layout in the BuilderProvider
+    // This makes the atom state available to all children
+    <BuilderProvider>
+      <div className="flex flex-col md:flex-row h-full p-4 gap-4">
+        
+        {/* Main 3D Viewport */}
+        <AtomViewport />
+        
+        {/* Controls Panel */}
+        <ControlsPanel />
 
-export default BuilderPage;
+      </div>
+    </BuilderProvider>
+  );
+}
+

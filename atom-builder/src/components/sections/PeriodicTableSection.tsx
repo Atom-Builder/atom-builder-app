@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link'; // Import the Link component
 
 // A more comprehensive list of element categories for the filter buttons
 const elementGroups = [
@@ -39,26 +40,54 @@ const groupColors: { [key: string]: string } = {
 };
 
 const ElementTile = ({ el, activeFilter }: { el: any, activeFilter: string }) => {
-    if (!el) return <div className="hidden sm:block aspect-square"></div>; // Hide empty on mobile, show on larger
+  if (!el) return <div className="hidden sm:block aspect-square"></div>; // Hide empty on mobile, show on larger
     
     const color = groupColors[el.g] || 'bg-gray-800/50 border-gray-700';
     const isFiltered = activeFilter !== 'All' && el.g !== activeFilter;
-    const isPlaceholder = !el.name;
+  const isPlaceholder = !el.name;
 
-    const placeholderStyle = 'bg-gray-800/20 border-gray-800/90 text-sm text-gray-500 italic';
+  // Calculate default neutrons. (A simple, common isotope)
+  // We'll use this for the link.
+  // For mass like '(209)', we'll parse the number. For '1.008', we'll round.
+  let defaultNeutrons = 0;
+  if (el.mass) {
+    const massNum = parseFloat(String(el.mass).replace('(', '').replace(')', ''));
+    defaultNeutrons = Math.round(massNum) - el.n;
+    if (defaultNeutrons < 0) defaultNeutrons = 0; // Hydrogen case
+  }
+  
+  const elementHref = {
+    pathname: '/builder',
+    query: {
+      protons: el.n,
+      neutrons: defaultNeutrons,
+      electrons: el.n, // Default to a neutral atom
+    },
+  };
 
-    return (
-        <div 
-            title={el.name ? `${el.n}: ${el.name} (${el.mass})` : el.g}
-            className={`aspect-square border rounded-md flex flex-col items-center justify-center p-1 cursor-pointer
+  const tileContent = (
+    <div
+      title={el.name ? `${el.n}: ${el.name} (${el.mass})` : el.g}
+      className={`aspect-square border rounded-md flex flex-col items-center justify-center p-1 cursor-pointer
                        hover:scale-110 hover:shadow-2xl hover:shadow-cyan-500/50 hover:!opacity-100 transition-all duration-300 group
+                       w-full h-full
                        ${isPlaceholder ? placeholderStyle : color} 
                        ${isFiltered ? 'opacity-20' : 'opacity-100'}`}
-        >
-            <span className="text-xs text-gray-400 group-hover:text-cyan-300">{el.n || ''}</span>
-            <span className="text-sm sm:text-lg font-bold text-white">{el.s}</span>
-        </div>
-    );
+    >
+      <span className="text-xs text-gray-400 group-hover:text-cyan-300">{el.n || ''}</span>
+      <span className="text-sm sm:text-lg font-bold text-white">{el.s}</span>
+    </div>
+  );
+
+  // If it's a real element, wrap it in a Link.
+  // If it's a placeholder (like "57-71"), just render the div.
+  return el.name ? (
+    <Link href={elementHref} className="aspect-square">
+      {tileContent}
+    </Link>
+  ) : (
+    tileContent
+  );
 };
 
 export default function PeriodicTableSection() {
