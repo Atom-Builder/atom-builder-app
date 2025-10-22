@@ -1,203 +1,217 @@
 'use client';
 
-import React, { 
+import { 
   createContext, 
   useContext, 
   useState, 
   useEffect, 
-  useMemo, 
+  useMemo,
   ReactNode,
   useCallback
 } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { periodicTableData } from '@/data/periodicTable'; // Ensure this is the full 118-element data
+import { periodicTable } from '@/data/periodicTable'; // Ensure this is the full 118-element data
+
+
 
 // --- 1. DEFINE TYPES ---
-
-// The core state of the atom
-interface AtomState {
+// (interfaces are the same)
+interface Atom {
   protons: number;
   neutrons: number;
   electrons: number;
 }
-
-// The output of our "AI" analysis
-type StabilityStatus = 'Stable' | 'Unstable' | 'Radioactive' | 'Predicted';
-interface StabilityAnalysis {
-  status: StabilityStatus;
-  reason: string;
-}
-
-// The comprehensive info object
 interface AtomInfo {
   symbol: string;
   name: string;
-  mass: number | string;
   charge: number;
-  stability: StabilityAnalysis;
+  mass: number;
+  stability: {
+    status: 'Stable' | 'Unstable' | 'Radioactive' | 'Predicted' | 'Unknown';
+    reason: string;
+  };
 }
 
-// The context's value
 interface BuilderContextType {
-  atom: AtomState;
+  atom: Atom;
   info: AtomInfo;
   isAntimatter: boolean;
-  isStableMode: boolean; // <-- NEW
+  isStableMode: boolean;
   vizMode: 'bohr' | 'cloud';
   isPublic: boolean;
-  
-  // Setters
-  setProtons: (p: number) => void;
-  setNeutrons: (n: number) => void;
-  setElectrons: (e: number) => void;
-  setIsAntimatter: (isAnti: boolean) => void;
-  setVizMode: (mode: 'bohr' | 'cloud') => void;
-  setIsPublic: (isPublic: boolean) => void;
-  toggleStableMode: () => void; // <-- NEW
+  setProtons: (val: number) => void;
+  setNeutrons: (val: number) => void;
+  setElectrons: (val: number) => void;
+  setIsAntimatter: (val: boolean) => void;
+  setVizMode: (val: 'bohr' | 'cloud') => void;
+  setIsPublic: (val: boolean) => void;
+  toggleStableMode: () => void;
   resetAtom: () => void;
-  loadPreset: (config: AtomState, isAnti?: boolean) => void;
 }
 
-const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
-
-// --- 2. "AI" LOGIC ---
-
-/**
- * Predicts the most stable number of neutrons for a given number of protons.
- * This is a simplified physics model (the "Band of Stability").
- */
+// Helper function to get the most stable neutron count for a proton number
+// This is a simplified physics model (the "band of stability")
 const getStableNeutronCount = (protons: number): number => {
-  if (protons === 1) return 0; // Hydrogen-1 (Protium)
-  if (protons === 2) return 2; // Helium-4
+  if (protons === 1) return 0; // Hydrogen-1
   if (protons <= 20) {
-    // For light elements, N ≈ Z
-    const el = periodicTableData[protons];
-    if (el) return Math.round(Number(el.mass) - protons);
-    return protons; // Fallback
+    return protons; // For light elements, N ≈ Z
   }
-  if (protons <= 82) {
-    // For heavier elements, N/Z ratio increases to ~1.5
-    return Math.round(protons * (1.25 + (protons / 100)));
-  }
-  // For Z > 82, all isotopes are radioactive, but we can pick the longest-lived one
-  const el = periodicTableData[protons];
-  if (el) return Math.round(Number(String(el.mass).replace('(', '').replace(')', '')) - protons);
+  // For heavier elements, N > Z. This is a rough approximation.
+  const n = Math.floor(protons * (1 + (protons / 100)));
   
-  // Prediction for unknown
-  return Math.round(protons * 1.5);
+  // Let's use the actual data if we have it
+  const element = periodicTable[protons];
+  if (element) {
+    // Return the neutron count for the most stable isotope
+    // We get this by rounding the atomic mass and subtracting protons
+    const stableMass = Math.round(element.mass);
+    return stableMass - protons;
+  }
+  
+  // Fallback for predicted elements
+  return Math.max(protons, n);
 };
 
-/**
- * Our "AI" for analyzing atomic stability.
- * This is a simplified model based on the N/Z ratio.
- */
-const calculateStability = (protons: number, neutrons: number): StabilityAnalysis => {
-  if (protons > 118) {
-    return { status: 'Predicted', reason: 'Hypothetical element beyond the known periodic table.' };
-  }
-  if (protons > 82) {
-    return { status: 'Radioactive', reason: 'All elements with Z > 82 are naturally radioactive.' };
+// --- 2. THE "AI" - STABILITY CALCULATION ---
+const calculateStability = (protons: number, neutrons: number): AtomInfo['stability'] => {
+  const element = periodicTable[protons];
+
+  // A. Predicted Elements (Beyond our 118-element dataset)
+  if (!element) {
+    if (protons > 150 || neutrons > 250) {
+       return { status: 'Unknown', reason: 'Particle count exceeds theoretical simulation limits.' };
+    }
+    // This is the "Island of Stability" concept, simplified
+    const magicNumbers = [126, 184];
+    const isMagic = magicNumbers.includes(protons) || magicNumbers.includes(neutrons);
+    const ratio = neutrons / protons;
+
+    if (isMagic && ratio > 1.4 && ratio < 1.7) {
+      return { 
+        status: 'Predicted', 
+        reason: 'This hypothetical nucleus falls within a predicted "Island of Stability." It may have a longer half-life.' 
+      };
+    }
+    return { 
+      status: 'Predicted', 
+      reason: 'This is a hypothetical, undiscovered element. Its properties are unknown.' 
+    };
   }
 
-  const stableN = getStableNeutronCount(protons);
-  const tolerance = protons <= 20 ? 1 : Math.round(protons * 0.05); // Looser tolerance for heavy atoms
+  // B. Known Elements (1-118)
+  const stableNeutrons = getStableNeutronCount(protons);
+  const mass = protons + neutrons;
 
-  if (Math.abs(neutrons - stableN) <= tolerance) {
-    return { status: 'Stable', reason: `N/Z ratio (${(neutrons/protons).toFixed(2)}) is within the band of stability.` };
-  } else if (neutrons < stableN) {
-    return { status: 'Unstable', reason: 'Neutron-deficient (proton-rich). Likely to decay via positron emission or electron capture.' };
-  } else {
-    return { status: 'Unstable', reason: 'Neutron-rich. Likely to decay via beta emission.' };
+  if (protons > 83) { // All elements after Bismuth are radioactive
+    return {
+      status: 'Radioactive',
+      reason: `All isotopes of ${element.name} (elements > 83) are radioactive and decay over time.`
+    };
   }
-};
 
-/**
- * Generates IUPAC systematic names for undiscovered elements.
- */
-const predictElement = (protons: number): Omit<AtomInfo, 'charge' | 'stability'> => {
-  const digits = String(protons).split('');
-  const names = ['nil', 'un', 'bi', 'tri', 'quad', 'pent', 'hex', 'sept', 'oct', 'enn'];
-  const name = digits.map(d => names[Number(d)]).join('') + 'ium';
-  const symbol = digits.map(d => names[Number(d)][0]).join('').toUpperCase();
+  const neutronDiff = Math.abs(neutrons - stableNeutrons);
+  
+  if (neutronDiff === 0) {
+    return {
+      status: 'Stable',
+      reason: `This is the most common and stable isotope of ${element.name}.`
+    };
+  }
+  
+  if (neutronDiff <= 2) {
+    return {
+      status: 'Unstable',
+      reason: `This isotope (${mass}${element.symbol}) is known but unstable. It will likely decay.`
+    };
+  }
 
   return {
-    symbol: symbol,
-    name: name,
-    mass: '?',
+    status: 'Unstable',
+    reason: `This nucleus has a highly unstable neutron-to-proton ratio and would decay almost instantly.`
   };
 };
 
+// --- 3. PREDICTION & DERIVATION LOGIC ---
+const getAtomInfo = (atom: Atom): AtomInfo => {
+  const { protons, neutrons, electrons } = atom;
+  const element = periodicTable[protons];
 
-// --- 3. THE PROVIDER ---
+  if (element) {
+    return {
+      symbol: element.symbol,
+      name: element.name,
+      charge: protons - electrons,
+      mass: protons + neutrons, // This is the mass number, not atomic weight
+      stability: calculateStability(protons, neutrons),
+    };
+  }
+  
+  // Fallback for predicted elements
+  const predictedSymbol = `E${protons}`;
+  const predictedName = `Element-${protons}`;
+  
+  return {
+    symbol: predictedSymbol,
+    name: predictedName,
+    charge: protons - electrons,
+    mass: protons + neutrons,
+    stability: calculateStability(protons, neutrons),
+  };
+};
 
+const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
+
+// --- 4. THE PROVIDER ---
 export const BuilderProvider = ({ children }: { children: ReactNode }) => {
-  const [atom, setAtom] = useState<AtomState>({ protons: 1, neutrons: 0, electrons: 1 });
+  const [atom, setAtom] = useState<Atom>({ protons: 1, neutrons: 0, electrons: 1 });
+  const [info, setInfo] = useState<AtomInfo>(() => getAtomInfo(atom));
   const [isAntimatter, setIsAntimatter] = useState(false);
   const [vizMode, setVizMode] = useState<'bohr' | 'cloud'>('bohr');
+  const [isStableMode, setIsStableMode] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
-  const [isStableMode, setIsStableMode] = useState(false); // <-- NEW STATE
-
-  // --- 4. URL PRESET LOADER ---
-  // This effect runs once on page load to check for URL params
+  
   const searchParams = useSearchParams();
+
+  // Effect to load atom from URL
   useEffect(() => {
     const p = searchParams.get('p');
     const n = searchParams.get('n');
     const e = searchParams.get('e');
-    if (p) {
+
+    if (p && n && e) {
       const protons = parseInt(p, 10);
-      const neutrons = n ? parseInt(n, 10) : getStableNeutronCount(protons);
-      const electrons = e ? parseInt(e, 10) : protons;
-      setAtom({ protons, neutrons, electrons });
+      const neutrons = parseInt(n, 10);
+      const electrons = parseInt(e, 10);
+      if (!isNaN(protons) && !isNaN(neutrons) && !isNaN(electrons)) {
+        setAtom({ protons, neutrons, electrons });
+        setIsStableMode(false); // Disable stable mode when loading a custom atom
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
-
-  // --- 5. "AI"-POWERED INFO OBJECT ---
-  // This recalculates on every state change
-  const info = useMemo((): AtomInfo => {
-    const { protons, neutrons, electrons } = atom;
-    const charge = protons - electrons;
-    const stability = calculateStability(protons, neutrons);
-    
-    let elementData: Omit<AtomInfo, 'charge' | 'stability'>;
-
-    if (protons > 118) {
-      elementData = predictElement(protons);
-    } else {
-      const el = periodicTableData[protons] || { symbol: '?', name: 'Unknown', mass: '?' };
-      elementData = { symbol: el.symbol, name: el.name, mass: el.mass };
-    }
-    
-    return { ...elementData, charge, stability };
+  }, [searchParams]);
+  
+  // Effect to update info when atom changes
+  useEffect(() => {
+    setInfo(getAtomInfo(atom));
   }, [atom]);
-  
-  // --- 6. ATOM SETTERS (WITH STABLE MODE LOGIC) ---
-  
-  const setProtons = useCallback((p: number) => {
-    if (p < 1) p = 1;
-    if (p > 150) p = 150; // Allow prediction up to 150
+
+  // --- 5. STATE SETTERS ---
+  const setProtons = useCallback((protons: number) => {
     setAtom(prev => {
-      const newNeutrons = isStableMode ? getStableNeutronCount(p) : prev.neutrons;
-      const newElectrons = (prev.electrons === prev.protons) ? p : prev.electrons; // Auto-update electrons if atom was neutral
-      return { protons: p, neutrons: newNeutrons, electrons: newElectrons };
+      const newNeutrons = isStableMode ? getStableNeutronCount(protons) : prev.neutrons;
+      return { protons, neutrons: newNeutrons, electrons: protons };
     });
   }, [isStableMode]);
 
-  const setNeutrons = useCallback((n: number) => {
-    if (n < 0) n = 0;
-    if (n > 250) n = 250;
-    setIsStableMode(false); // Manually changing neutrons turns off stable mode
-    setAtom(prev => ({ ...prev, neutrons: n }));
+  const setNeutrons = useCallback((neutrons: number) => {
+    setIsStableMode(false); // Manually changing neutrons disables stable mode
+    setAtom(prev => ({ ...prev, neutrons }));
   }, []);
 
-  const setElectrons = useCallback((e: number) => {
-    if (e < 0) e = 0;
-    if (e > 150) e = 150;
-    setAtom(prev => ({ ...prev, electrons: e }));
+  const setElectrons = useCallback((electrons: number) => {
+    setAtom(prev => ({ ...prev, electrons }));
   }, []);
-
-  const toggleStableMode = () => {
+  
+  const toggleStableMode = useCallback(() => {
     setIsStableMode(prevMode => {
       const newMode = !prevMode;
       if (newMode) {
@@ -206,23 +220,17 @@ export const BuilderProvider = ({ children }: { children: ReactNode }) => {
       }
       return newMode;
     });
-  };
+  }, []);
 
-  const resetAtom = () => {
+  const resetAtom = useCallback(() => {
     setAtom({ protons: 1, neutrons: 0, electrons: 1 });
     setIsAntimatter(false);
     setVizMode('bohr');
-    setIsPublic(false);
     setIsStableMode(false);
-  };
-  
-  const loadPreset = (config: AtomState, isAnti: boolean = false) => {
-    setAtom(config);
-    setIsAntimatter(isAnti);
-    setIsStableMode(false); // Turn off stable mode when loading a preset
-  };
+    setIsPublic(false);
+  }, []);
 
-  // --- 7. CONTEXT VALUE ---
+  // --- 6. CONTEXT VALUE ---
   const value = useMemo(() => ({
     atom,
     info,
@@ -237,11 +245,10 @@ export const BuilderProvider = ({ children }: { children: ReactNode }) => {
     setVizMode,
     setIsPublic,
     toggleStableMode,
-    resetAtom,
-    loadPreset
+    resetAtom
   }), [
     atom, info, isAntimatter, isStableMode, vizMode, isPublic, 
-    setProtons, setNeutrons, setElectrons, toggleStableMode
+    setProtons, setNeutrons, setElectrons, toggleStableMode, resetAtom
   ]);
 
   return (
@@ -251,6 +258,7 @@ export const BuilderProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
+// --- 7. THE HOOK ---
 export const useBuilder = (): BuilderContextType => {
   const context = useContext(BuilderContext);
   if (context === undefined) {
