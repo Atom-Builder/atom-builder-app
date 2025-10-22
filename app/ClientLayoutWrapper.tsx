@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { GraphicsProvider } from '@/hooks/useGraphicsSettings';
 import { AuthProvider } from '@/hooks/useAuth';
-import Navbar from '@/components/layout/Navbar';
+// --- 1. MOVED IMPORTS HERE ---
+import Navbar from '@/components/layout/Navbar'; 
 import Footer from '@/components/layout/Footer';
 import SettingsModal from '@/components/core/SettingsModal';
 import ParticleBackground from '@/components/core/ParticleBackground';
-import { Toaster } from 'react-hot-toast'; // <-- 1. IMPORT THE TOASTER
+// --- END MOVED IMPORTS ---
+import { Toaster } from 'react-hot-toast';
 
 export default function ClientLayoutWrapper({ children }: { children: React.ReactNode }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -15,8 +17,7 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
   return (
     <GraphicsProvider>
       <AuthProvider>
-        {/* 2. ADD THE TOASTER COMPONENT HERE */}
-        <Toaster 
+        <Toaster
           position="bottom-center"
           toastOptions={{
             style: {
@@ -26,7 +27,8 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
           }}
         />
         
-        <ParticleBackground />
+        {/* --- 2. RENDER COMPONENTS HERE --- */}
+        <ParticleBackground /> 
         <SettingsModal
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
@@ -36,6 +38,7 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
           <main className="flex-grow">{children}</main>
           <Footer />
         </div>
+         {/* --- END RENDER COMPONENTS --- */}
       </AuthProvider>
     </GraphicsProvider>
   );

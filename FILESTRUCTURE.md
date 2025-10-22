@@ -5,14 +5,18 @@ atom-builder-app/
 │   ├── creations/
 │   │   └── page.tsx
 │   ├── ClientLayoutWrapper.tsx
+│   ├── favicon.ico
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
+├── public/
+│   └── ... (images, etc.)
 ├── src/
 │   ├── components/
 │   │   ├── 3d/
 │   │   │   └── AnimatedAtom.tsx
 │   │   ├── core/
+│   │   │   ├── AtomPreview.tsx
 │   │   │   ├── AtomViewport.tsx
 │   │   │   ├── ControlsPanel.tsx
 │   │   │   ├── ParticleBackground.tsx
@@ -30,8 +34,15 @@ atom-builder-app/
 │   │       └── PeriodicTableSection.tsx
 │   ├── data/
 │   │   └── periodicTable.ts
-│   └── hooks/
-│       ├── useAuth.tsx
-│       ├── useBuilder.tsx
-│       └── useGraphicsSettings.tsx
-└── package.json
+│   ├── hooks/
+│   │   ├── useAuth.tsx
+│   │   ├── useBuilder.tsx
+│   │   └── useGraphicsSettings.tsx
+│   └── types.ts
+├── .env.local
+├── .gitignore
+├── next.config.js
+├── package.json
+├── postcss.config.js
+├── tailwind.config.ts
+└── tsconfig.json
