@@ -22,8 +22,7 @@ import {
     getDoc,
     Firestore,
     serverTimestamp,
-    // Timestamp // <-- FIX: Removed unused import
-    FieldValue // Keep FieldValue if used elsewhere, otherwise remove if only serverTimestamp is needed.
+    FieldValue // Keep FieldValue for serverTimestamp
 } from 'firebase/firestore';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
@@ -40,20 +39,34 @@ const firebaseConfig = {
 
 // Initialize Firebase
 let app: FirebaseApp;
-// --- FIX: Use const for auth and db ---
-const auth: Auth;
-export const db: Firestore;
+// --- FIX: Revert back to let ---
+let auth: Auth;
+export let db: Firestore;
 // --- END FIX ---
 
-if (!getApps().length) {
-    app = initializeApp(firebaseConfig);
-} else {
-    app = getApps()[0];
-}
 
-// Assign after potential initialization
-auth = getAuth(app);
-db = getFirestore(app);
+if (!getApps().length) {
+    // Initialize Firebase only if it hasn't been initialized yet
+     try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app); // Assign here after init
+        db = getFirestore(app); // Assign here after init
+     } catch (error) {
+         console.error("Firebase initialization error:", error);
+         // Handle initialization error appropriately - maybe show error to user
+         // For now, ensure auth and db are assigned null or handled gracefully
+         // @ts-ignore // Ignore potential unassigned error if init fails catastrophically
+         auth = null;
+         // @ts-ignore
+         db = null;
+     }
+
+} else {
+    // Get the default app if already initialized
+    app = getApps()[0];
+    auth = getAuth(app); // Assign here
+    db = getFirestore(app); // Assign here
+}
 
 
 interface AuthContextType {
@@ -70,79 +83,94 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // Ensure auth is initialized before setting up listener
+        if (!auth) {
+             console.error("Firebase Auth not initialized. Cannot set up listener.");
+             setLoading(false); // Stop loading if auth failed
+             return;
+        }
+
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUser(user);
-                const userRef = doc(db, 'users', user.uid);
-                const userSnap = await getDoc(userRef);
-                if (!userSnap.exists()) {
-                    try {
-                        await setDoc(userRef, {
-                            uid: user.uid,
-                            email: user.email,
-                            displayName: user.displayName,
-                            photoURL: user.photoURL,
-                            lastLogin: serverTimestamp(),
-                            isAnonymous: user.isAnonymous
-                        });
-                    } catch (error) {
-                        console.error("Error creating user document:", error);
+                // Ensure db is initialized before Firestore operations
+                if (db) {
+                    const userRef = doc(db, 'users', user.uid);
+                    const userSnap = await getDoc(userRef);
+                    if (!userSnap.exists()) {
+                        try {
+                            await setDoc(userRef, {
+                                uid: user.uid,
+                                email: user.email,
+                                displayName: user.displayName,
+                                photoURL: user.photoURL,
+                                lastLogin: serverTimestamp(),
+                                isAnonymous: user.isAnonymous
+                            });
+                        } catch (error) {
+                            console.error("Error creating user document:", error);
+                        }
                     }
+                } else {
+                    console.error("Firestore DB not initialized. Cannot check/create user doc.")
                 }
+                setLoading(false); // Set loading false after user logic
             } else {
                  try {
-                     // Attempt anonymous sign-in only if no user is detected
                      await signInAnonymously(auth);
+                     // Let the next onAuthStateChanged event handle setting the anonymous user
                  } catch (error) {
                      console.error("Anonymous sign-in failed: ", error);
-                     // Handle anonymous sign-in failure (e.g., show error to user)
-                 } finally {
-                    setLoading(false); // Ensure loading is set to false even if anonymous fails
+                     setLoading(false); // Stop loading if anonymous sign-in fails
                  }
             }
-             // Set loading false after user state is determined or anonymous sign-in attempted
-             if (user) setLoading(false);
         });
 
-         // Cleanup subscription on unmount
          return () => unsubscribe();
     }, []); // Empty dependency array means this runs only once on mount
 
 
     const signInWithGoogle = async () => {
+         if (!auth) {
+             toast.error("Authentication service not ready.");
+             return;
+         }
         setLoading(true);
         const provider = new GoogleAuthProvider();
         try {
             await signInWithPopup(auth, provider);
             toast.success('Signed in successfully!');
-        } catch (error: unknown) { // <-- FIX: Use unknown instead of any
+            // onAuthStateChanged will handle setting user and setLoading(false)
+        } catch (error: unknown) {
             console.error("Google sign-in failed: ", error);
-             if (error instanceof Error) { // Type guard
+             if (error instanceof Error) {
                  toast.error(`Sign-in failed: ${error.message}`);
              } else {
                  toast.error('An unknown error occurred during sign-in.');
              }
-            setLoading(false); // Ensure loading is set false on error
+            setLoading(false);
         }
-         // setLoading(false) will be handled by onAuthStateChanged after successful sign-in
     };
 
     const signOut = async () => {
+         if (!auth) {
+             toast.error("Authentication service not ready.");
+             return;
+         }
         setLoading(true);
         try {
             await firebaseSignOut(auth);
             toast.success('Signed out.');
-             // onAuthStateChanged will handle signing user in anonymously
-        } catch (error: unknown) { // <-- FIX: Use unknown instead of any
+             // onAuthStateChanged will handle anonymous sign-in and setLoading(false)
+        } catch (error: unknown) {
             console.error("Sign-out failed: ", error);
-             if (error instanceof Error) { // Type guard
+             if (error instanceof Error) {
                  toast.error(`Sign-out failed: ${error.message}`);
              } else {
                  toast.error('An unknown error occurred during sign-out.');
              }
-            setLoading(false); // Ensure loading is set false on error
+            setLoading(false);
         }
-         // setLoading(false) will be handled by onAuthStateChanged after sign-out triggers anonymous sign-in
     };
 
     return (
@@ -159,4 +187,3 @@ export const useAuth = (): AuthContextType => {
     }
     return context;
 };
-
