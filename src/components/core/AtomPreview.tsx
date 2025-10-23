@@ -1,13 +1,12 @@
 'use client';
 
-// --- FIX: Added Suspense ---
 import React, { useMemo, useRef, Suspense } from 'react';
-// --- END FIX ---
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
 
+// ... (Electron component remains the same) ...
 // Electron calculation/rendering constants
 const bohrShells = [2, 8, 18, 32, 32, 18, 8]; // Max electrons per shell
 
@@ -65,6 +64,7 @@ function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius 
     );
 }
 
+
 // Represents the nucleus (protons + neutrons)
 interface NucleusProps {
     protons: number;
@@ -76,9 +76,8 @@ interface NucleusProps {
 function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps) {
     const groupRef = useRef<THREE.Group>(null!);
     const totalParticles = protons + neutrons;
-    const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08); // Scale nucleus size
+    const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08);
 
-    // Memoize particle positions for performance
     const particles = useMemo(() => {
         const arr = [];
         const particleRadius = 0.05;
@@ -91,7 +90,9 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
                 Math.random() * 2 - 1
             );
             if (point.length() === 0) point.set(1, 0, 0);
+            // --- FIX: Ensure points are within the calculated radius ---
             point.normalize().multiplyScalar(Math.random() * (radius - particleRadius));
+            // --- END FIX ---
 
             arr.push({
                 position: point.toArray(),
@@ -99,8 +100,8 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             });
         }
         return arr;
-        // --- FIX: Corrected dependency array ---
-    }, [protons, neutrons, protonColor, neutronColor]);
+        // --- FIX: Added radius and totalParticles to dependencies ---
+    }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]);
     // --- END FIX ---
 
 
@@ -127,6 +128,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     );
 }
 
+// ... (OrbitLine, AtomScene, AtomPreview components remain the same) ...
 // Draws the orbit line for Bohr model
 interface OrbitLineProps {
     radius: number;
@@ -218,9 +220,7 @@ export default function AtomPreview({ protons, neutrons, electrons, isAntimatter
     return (
         <Canvas camera={{ position: [0, 5, 10], fov: 50 }}>
              <color attach="background" args={['#0a0a0a']} />
-             {/* --- FIX: Use imported Suspense --- */}
             <Suspense fallback={null}>
-            {/* --- END FIX --- */}
                 <AtomScene
                     protons={protons}
                     neutrons={neutrons}

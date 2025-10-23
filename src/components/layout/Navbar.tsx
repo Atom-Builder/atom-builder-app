@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image'; // <-- 1. IMPORT next/image
 import { useState } from 'react';
 import { Settings, X, Menu, LogIn, LogOut, Loader2, User as UserIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,9 +10,6 @@ export default function Navbar({ onSettingsClick }: { onSettingsClick: () => voi
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const { user, signInWithGoogle, signOut, loading: authLoading } = useAuth();
 
-    // --- FIX: Removed unused 'isAnonymous' ---
-    // const isAnonymous = !authLoading && (!user || user.isAnonymous);
-    // --- END FIX ---
     const isSignedIn = !authLoading && user && !user.isAnonymous;
 
     const navLinks = [
@@ -90,12 +88,21 @@ export default function Navbar({ onSettingsClick }: { onSettingsClick: () => voi
                             )}
 
                             {/* Optional: User Avatar/Icon if signed in */}
+                            {/* --- FIX: Use next/image --- */}
                             {isSignedIn && user?.photoURL && (
-                                <img src={user.photoURL} alt="User avatar" className="h-8 w-8 rounded-full" />
+                                <Image
+                                    src={user.photoURL}
+                                    alt="User avatar"
+                                    width={32} // Required by next/image
+                                    height={32} // Required by next/image
+                                    className="h-8 w-8 rounded-full"
+                                    unoptimized // Add if external URL optimization isn't needed/configured
+                                />
                             )}
                              {isSignedIn && !user?.photoURL && (
                                 <UserIcon className="h-8 w-8 rounded-full text-gray-400 bg-gray-700 p-1" />
                             )}
+                             {/* --- END FIX --- */}
 
                         </div>
                     </div>
@@ -168,11 +175,20 @@ export default function Navbar({ onSettingsClick }: { onSettingsClick: () => voi
                      {/* User Info in Mobile */}
                      {isSignedIn && (
                         <div className="mt-3 px-5 flex items-center space-x-3">
+                             {/* --- FIX: Use next/image --- */}
                              {user?.photoURL ? (
-                                <img src={user.photoURL} alt="User avatar" className="h-10 w-10 rounded-full" />
+                                <Image
+                                    src={user.photoURL}
+                                    alt="User avatar"
+                                    width={40} // Required
+                                    height={40} // Required
+                                    className="h-10 w-10 rounded-full"
+                                    unoptimized // Add if external URL optimization isn't needed/configured
+                                />
                             ) : (
                                 <UserIcon className="h-10 w-10 rounded-full text-gray-400 bg-gray-700 p-1" />
                             )}
+                             {/* --- END FIX --- */}
                             <div>
                                 <div className="text-base font-medium leading-none text-white">{user?.displayName || 'User'}</div>
                                 <div className="text-sm font-medium leading-none text-gray-400">{user?.email || ''}</div>

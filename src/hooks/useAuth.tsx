@@ -22,7 +22,7 @@ import {
     getDoc,
     Firestore,
     serverTimestamp,
-    // FieldValue // <-- FIX: Removed unused import
+    // FieldValue // Keep if used for other Firestore operations, otherwise remove
 } from 'firebase/firestore';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
@@ -49,10 +49,10 @@ if (!getApps().length) {
         db = getFirestore(app);
      } catch (error) {
          console.error("Firebase initialization error:", error);
-         // --- FIX: Use @ts-expect-error ---
-         // @ts-expect-error // Ignore potential unassigned error if init fails catastrophically
+         // --- FIX: Add description for @ts-expect-error ---
+         // @ts-expect-error - If init fails, auth might be unassigned before use. Assign null for safety.
          auth = null;
-         // @ts-expect-error
+         // @ts-expect-error - If init fails, db might be unassigned before use. Assign null for safety.
          db = null;
          // --- END FIX ---
      }
@@ -61,6 +61,8 @@ if (!getApps().length) {
     auth = getAuth(app);
     db = getFirestore(app);
 }
+
+// ... (rest of the useAuth hook remains the same) ...
 
 interface AuthContextType {
     user: User | null;
