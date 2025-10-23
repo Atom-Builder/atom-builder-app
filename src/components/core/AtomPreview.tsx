@@ -1,167 +1,246 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react'; // Added useRef
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Sphere } from '@react-three/drei';
+import React, { useMemo, useRef, Suspense } from 'react';
+import { Canvas, useFrame, ThreeElements } from '@react-three/fiber';
+import { OrbitControls, Sphere, Points, PointMaterial } from '@react-three/drei';
+import * as THREE from 'three';
 import { Color } from 'three';
-import * as THREE from 'three'; // <-- THE FIX: Import the THREE namespace
+import { useBuilder } from '@/hooks/useBuilder';
 
-// Electron calculation/rendering constants
+// Constants
 const bohrShells = [2, 8, 18, 32, 32, 18, 8]; // Max electrons per shell
 
-interface ShellProps {
-    shellIndex: number;
-    electronCount: number;
-    electronColor: Color;
-}
+// --- Components ---
 
-function Shell({ shellIndex, electronCount, electronColor }: ShellProps) {
-    const radius = (shellIndex + 1) * 0.7; // Increase shell radius
-    const electrons = Array.from({ length: electronCount });
-    // Make outer electrons orbit slower for visual effect
-    const speed = 0.5 / (shellIndex + 1);
-
-    return (
-        <group>
-            {/* The orbit line - thin ring */}
-            <mesh rotation={[Math.PI / 2, 0, 0]}>
-                <ringGeometry args={[radius - 0.005, radius + 0.005, 64]} /> {/* Thinner ring */}
-                {/* Use electronColor for the orbit line */}
-                <meshBasicMaterial color={electronColor} transparent opacity={0.2} side={THREE.DoubleSide} />
-            </mesh>
-
-            {/* Render electrons for this shell */}
-            {electrons.map((_, i) => (
-                <Electron
-                    key={i}
-                    radius={radius}
-                    speed={speed}
-                    // Distribute electrons evenly around the orbit
-                    offset={(i / electronCount) * Math.PI * 2}
-                    color={electronColor}
-                />
-            ))}
-        </group>
-    );
-}
-
+// Represents a single electron sphere
 interface ElectronProps {
     radius: number;
     speed: number;
     offset: number;
     color: Color;
+    orbitAxis?: 'xy' | 'xz' | 'yz'; // For cloud model
+    orbitRadius?: number;          // For cloud model eccentricity
 }
 
-function Electron({ radius, speed, offset, color }: ElectronProps) {
-    // Use THREE.Mesh type for the ref
+function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius = 0 }: ElectronProps) {
     const ref = useRef<THREE.Mesh>(null!);
 
     useFrame(({ clock }) => {
         const time = clock.getElapsedTime();
         if (ref.current) {
-            // Calculate position on the circle
-            ref.current.position.x = Math.cos(time * speed + offset) * radius;
-            ref.current.position.z = Math.sin(time * speed + offset) * radius;
-            // Keep y position at 0 (on the plane)
-            ref.current.position.y = 0;
+            const angle = time * speed + offset;
+            const r = radius + Math.sin(time * speed * 2 + offset) * orbitRadius; // Varying radius for cloud
+
+            switch (orbitAxis) {
+                case 'xy':
+                    ref.current.position.x = Math.cos(angle) * r;
+                    ref.current.position.y = Math.sin(angle) * r;
+                    ref.current.position.z = 0;
+                    break;
+                case 'yz':
+                    ref.current.position.x = 0;
+                    ref.current.position.y = Math.cos(angle) * r;
+                    ref.current.position.z = Math.sin(angle) * r;
+                    break;
+                case 'xz':
+                default:
+                    ref.current.position.x = Math.cos(angle) * r;
+                    ref.current.position.y = 0;
+                    ref.current.position.z = Math.sin(angle) * r;
+                    break;
+            }
         }
     });
 
     return (
-        // Smaller electron sphere
         <Sphere ref={ref} args={[0.08, 16, 16]}>
             <meshStandardMaterial
                 color={color}
-                emissive={color} // Make electron glow
-                emissiveIntensity={3} // Increase glow intensity
-                toneMapped={false} // Ensure glow isn't overly affected by scene lighting
+                emissive={color}
+                emissiveIntensity={3}
+                toneMapped={false}
             />
         </Sphere>
     );
 }
 
-
-function AtomScene({ protons, neutrons, electrons, isAntimatter }: {
+// Represents the nucleus (protons + neutrons)
+interface NucleusProps {
     protons: number;
     neutrons: number;
-    electrons: number;
-    isAntimatter: boolean;
-}) {
-    // Calculate shell distribution, nucleus size, and colors based on props
-    const { shells, nucleusSize, colors } = useMemo(() => {
+    protonColor: Color;
+    neutronColor: Color;
+}
+
+function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps) {
+    const groupRef = useRef<THREE.Group>(null!);
+    const totalParticles = protons + neutrons;
+    const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08); // Scale nucleus size
+
+    // Memoize particle positions for performance
+    const particles = useMemo(() => {
+        const arr = [];
+        const particleRadius = 0.05; // Smaller radius for individual nucleons
+        const sphere = new THREE.Sphere(new THREE.Vector3(), radius - particleRadius);
+
+        for (let i = 0; i < totalParticles; i++) {
+            const point = new THREE.Vector3();
+            // Distribute points somewhat randomly within the nucleus sphere
+            point.set(
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1
+            );
+            if (point.length() === 0) point.set(1, 0, 0); // Avoid center
+            point.normalize().multiplyScalar(Math.random() * (radius - particleRadius));
+
+            arr.push({
+                position: point.toArray(), // Store as array [x, y, z]
+                color: i < protons ? protonColor : neutronColor,
+            });
+        }
+        return arr;
+    }, [protons, neutrons, radius, protonColor, neutronColor]);
+
+    useFrame(() => {
+        // Subtle rotation for visual interest
+        if (groupRef.current) {
+            groupRef.current.rotation.y += 0.001;
+            groupRef.current.rotation.x += 0.0005;
+        }
+    });
+
+    return (
+        <group ref={groupRef}>
+            {particles.map((p, i) => (
+                <Sphere key={i} args={[0.05, 16, 16]} position={p.position as [number, number, number]}>
+                    <meshStandardMaterial
+                        color={p.color}
+                        emissive={p.color}
+                        emissiveIntensity={0.3}
+                        roughness={0.6}
+                    />
+                </Sphere>
+            ))}
+        </group>
+    );
+}
+
+
+// Draws the orbit line for Bohr model
+interface OrbitLineProps {
+    radius: number;
+}
+function OrbitLine({ radius }: OrbitLineProps) {
+    // Generate points for a circle
+    const points = useMemo(() => {
+        const pts = [];
+        const segments = 64;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            pts.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        return pts;
+    }, [radius]);
+
+    // --- FIX Starts Here ---
+    // Use the geometry prop, not args. Remove the 'loop' prop.
+    return (
+        <line geometry={new THREE.BufferGeometry().setFromPoints(points)}>
+            <lineBasicMaterial color="#0FF" transparent opacity={0.3} />
+        </line>
+    );
+    // --- FIX Ends Here ---
+}
+
+
+// Main Scene Component
+function AtomScene() {
+    const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
+
+    // Calculate colors based on antimatter state
+    const colors = useMemo(() => ({
+        proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
+        neutron: new Color('#888888'),
+        electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'),
+    }), [isAntimatter]);
+
+    // Calculate electron shell distribution
+    const shells = useMemo(() => {
         let remainingElectrons = electrons;
-        const calculatedShells = bohrShells.map(capacity => {
+        return bohrShells.map(capacity => {
             const count = Math.min(remainingElectrons, capacity);
             remainingElectrons -= count;
             return count;
-        }).filter(count => count > 0); // Only keep shells with electrons
-
-        // Basic nucleus size scaling - adjust as needed
-        const calculatedNucleusSize = Math.max(0.15, Math.cbrt(protons + neutrons) * 0.08);
-
-        // Define colors based on normal/antimatter
-        const calculatedColors = {
-            proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'), // Cyan/Magenta swap
-            neutron: new Color('#888888'), // Neutrons remain grey
-            electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'), // Magenta/Cyan swap
-        };
-
-        return { shells: calculatedShells, nucleusSize: calculatedNucleusSize, colors: calculatedColors };
-    }, [protons, neutrons, electrons, isAntimatter]);
+        }).filter(count => count > 0);
+    }, [electrons]);
 
     return (
         <>
-            <ambientLight intensity={0.6} />
-            <pointLight position={[8, 8, 8]} intensity={1.5} />
-            <pointLight position={[-8, -8, -8]} intensity={0.5} color={colors.proton} />
+            <ambientLight intensity={0.5} />
+            <pointLight position={[10, 10, 10]} intensity={1.5} />
+            <pointLight position={[-10, -10, -10]} intensity={0.5} color={colors.proton} />
 
-            {/* Nucleus */}
-            <group>
-                {/* Simplified nucleus representation for preview */}
-                <Sphere args={[nucleusSize, 32, 32]}>
-                    <meshStandardMaterial
-                        color={colors.proton} // Use proton color for nucleus representation
-                        emissive={colors.proton}
-                        emissiveIntensity={0.6}
-                        roughness={0.4}
-                        metalness={0.2}
+            <Nucleus
+                protons={protons}
+                neutrons={neutrons}
+                protonColor={colors.proton}
+                neutronColor={colors.neutron}
+            />
+
+            {vizMode === 'bohr' && shells.map((count, index) => {
+                const radius = (index + 1) * 0.7;
+                return (
+                    <group key={`shell-${index}`}>
+                        <OrbitLine radius={radius} />
+                        {Array.from({ length: count }).map((_, i) => (
+                            <Electron
+                                key={`electron-${index}-${i}`}
+                                radius={radius}
+                                speed={0.5 / (index + 1)}
+                                offset={(i / count) * Math.PI * 2}
+                                color={colors.electron}
+                                orbitAxis="xz" // Bohr model orbits on XZ plane
+                            />
+                        ))}
+                    </group>
+                );
+            })}
+
+            {vizMode === 'cloud' && Array.from({ length: electrons }).map((_, i) => {
+                // Distribute electrons somewhat randomly across potential shells/distances for cloud effect
+                const baseRadius = 1 + Math.random() * (shells.length || 1) * 0.5;
+                const speed = 0.3 + Math.random() * 0.4;
+                const offset = Math.random() * Math.PI * 2;
+                 // Assign random orbit axis and eccentricity for cloud effect
+                const axis = ['xy', 'xz', 'yz'][Math.floor(Math.random() * 3)] as 'xy' | 'xz' | 'yz';
+                const orbitEcc = Math.random() * baseRadius * 0.3; // Random radius variation
+
+                return (
+                    <Electron
+                        key={`cloud-electron-${i}`}
+                        radius={baseRadius}
+                        speed={speed}
+                        offset={offset}
+                        color={colors.electron}
+                        orbitAxis={axis}
+                        orbitRadius={orbitEcc}
                     />
-                </Sphere>
-            </group>
-
-            {/* Electron Shells (Bohr Model for Preview) */}
-            {shells.map((count, index) => (
-                <Shell
-                    key={index}
-                    shellIndex={index}
-                    electronCount={count}
-                    electronColor={colors.electron}
-                />
-            ))}
+                );
+            })}
         </>
     );
 }
 
-// Main Preview Component
-export default function AtomPreview({ protons, neutrons, electrons, isAntimatter }: {
-    protons: number;
-    neutrons: number;
-    electrons: number;
-    isAntimatter: boolean;
-}) {
+// Viewport Wrapper Component
+export default function AtomViewport() {
     return (
-        // Set a background color matching the theme
-        <Canvas camera={{ position: [0, 5, 10], fov: 50 }}>
-             <color attach="background" args={['#0a0a0a']} /> {/* Dark background */}
-            <React.Suspense fallback={null}>
-                <AtomScene
-                    protons={protons}
-                    neutrons={neutrons}
-                    electrons={electrons}
-                    isAntimatter={isAntimatter}
-                />
-                 {/* <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.5} /> */}
-            </React.Suspense>
+        <Canvas camera={{ position: [0, 5, 12], fov: 50 }} className="bg-gray-950 rounded-lg">
+             <color attach="background" args={['#050505']} /> {/* Even darker background */}
+            <Suspense fallback={null}>
+                <AtomScene />
+                <OrbitControls />
+            </Suspense>
         </Canvas>
     );
 }

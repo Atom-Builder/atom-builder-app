@@ -1,56 +1,59 @@
 'use client';
 
-import { 
+import React, { 
   createContext, 
   useContext, 
   useState, 
-  useEffect,
-  ReactNode
+  useEffect, 
+  ReactNode 
 } from 'react';
-import { initializeApp, getApp, getApps } from 'firebase/app';
 import { 
-  getAuth, 
-  signInWithPopup, 
   GoogleAuthProvider, 
-  onAuthStateChanged,
+  signInWithPopup, 
+  onAuthStateChanged, 
+  User, 
   signOut as firebaseSignOut,
-  User,
   signInAnonymously
 } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
-  setDoc,
-  getDoc,
+  setDoc, 
+  getDoc, 
+  Firestore,
+  serverTimestamp,
   Timestamp
 } from 'firebase/firestore';
-import toast from 'react-hot-toast';
+import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import toast from 'react-hot-toast'; // <-- 1. IMPORT TOAST
 
 // --- THIS IS THE FIX ---
 // Securely read from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyBV45_mDIRbunFBIjOhofqBIQ4aj9KpK8E",
-  authDomain: "atom-builder-2a2a0.firebaseapp.com",
-  projectId: "atom-builder-2a2a0",
-  storageBucket: "atom-builder-2a2a0.firebasestorage.app",
-  messagingSenderId: "322925747401",
-  appId: "1:322925747401:web:56d71ff8ef0c1d1b02c118"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
-// --- END FIX ---
 
 // Initialize Firebase
-let app;
+let app: FirebaseApp;
+let auth: Auth;
+export let db: Firestore;
+
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 } else {
-  app = getApp();
+  app = getApps()[0];
 }
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+auth = getAuth(app);
+db = getFirestore(app);
 
-// ... (rest of the file is identical) ...
-
+// Auth context
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -59,29 +62,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Helper function to create or update user in Firestore
-const updateUserInFirestore = async (user: User) => {
-  const userRef = doc(db, 'users', user.uid);
-  const userDoc = await getDoc(userRef);
-
-  if (!userDoc.exists()) {
-    // New user
-    await setDoc(userRef, {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
-      lastLogin: Timestamp.now(),
-      createdAt: Timestamp.now(),
-    });
-  } else {
-    // Returning user
-    await setDoc(userRef, {
-      lastLogin: Timestamp.now()
-    }, { merge: true });
-  }
-};
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -92,15 +72,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (user) {
         // User is signed in
         setUser(user);
-        await updateUserInFirestore(user);
+        
+        // Create user doc in Firestore if it doesn't exist
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (!userSnap.exists()) {
+          await setDoc(userRef, {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            lastLogin: serverTimestamp(),
+            isAnonymous: user.isAnonymous
+          });
+        }
       } else {
         // User is signed out, sign them in anonymously
-        await signInAnonymously(auth);
+        signInAnonymously(auth).catch((error) => {
+          console.error("Anonymous sign-in failed: ", error);
+        });
       }
       setLoading(false);
     });
 
-    // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []);
 
@@ -108,14 +103,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      setUser(result.user);
-      await updateUserInFirestore(result.user);
-      toast.success(`Welcome back, ${result.user.displayName}!`);
-    } catch (error) {
-      console.error("Error signing in with Google: ", error);
-      toast.error('Failed to sign in. Please try again.');
-    } finally {
+      await signInWithPopup(auth, provider);
+      // onAuthStateChanged will handle setting the user
+      toast.success('Signed in successfully!'); // <-- 2. USE SUCCESS TOAST
+    } catch (error: any) {
+      console.error("Google sign-in failed: ", error);
+      toast.error(error.message); // <-- 3. USE ERROR TOAST INSTEAD OF ALERT
       setLoading(false);
     }
   };
@@ -124,12 +117,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await firebaseSignOut(auth);
-      // Auth state change will handle signing in anonymously
-      toast.success('You have been signed out.');
-    } catch (error) {
-      console.error("Error signing out: ", error);
-      toast.error('Failed to sign out.');
-    } finally {
+      // onAuthStateChanged will handle signing user in anonymously
+      toast.success('Signed out.'); // <-- 4. USE SUCCESS TOAST
+    } catch (error: any) {
+      console.error("Sign-out failed: ", error);
+      toast.error(error.message); // <-- 5. USE ERROR TOAST
       setLoading(false);
     }
   };
