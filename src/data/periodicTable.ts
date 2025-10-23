@@ -11,9 +11,9 @@ interface PeriodicTableStructure {
 }
 
 // --- FIX: Add the 'export' keyword here ---
-export const elementGroups = [
-    'All', 'Alkali Metal', 'Alkaline Earth Metal', 'Lanthanide', 'Actinide', 
-    'Transition Metal', 'Post-transition Metal', 'Metalloid', 'Nonmetal', 'Halogen', 'Noble Gas', 'Unknown' 
+export const elementGroups = [ // <<<< ENSURE 'export' IS PRESENT
+    'All', 'Alkali Metal', 'Alkaline Earth Metal', 'Lanthanide', 'Actinide',
+    'Transition Metal', 'Post-transition Metal', 'Metalloid', 'Nonmetal', 'Halogen', 'Noble Gas', 'Unknown'
 ];
 // --- END FIX ---
 
