@@ -16,9 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/hooks/useAuth';
-// --- FIX 1: Import FieldValue ---
 import { collection, addDoc, serverTimestamp, FieldValue } from 'firebase/firestore';
-// --- END FIX 1 ---
 import toast from 'react-hot-toast';
 import { AtomCreation, Stability } from '@/types';
 
@@ -27,7 +25,7 @@ export default function ControlsPanel() {
         protons, setProtons,
         neutrons, setNeutrons,
         electrons, setElectrons,
-        atomInfo,
+        atomInfo, // This is the object containing name, symbol, etc.
         isAntimatter, setIsAntimatter,
         vizMode, setVizMode,
         isStableMode, setIsStableMode,
@@ -37,13 +35,18 @@ export default function ControlsPanel() {
     const { user } = useAuth();
     const [isSaving, setIsSaving] = useState(false);
     const [isPublic, setIsPublic] = useState(false);
-    const [atomName, setAtomName] = useState("");
+    // Initialize atomName based on the initial atomInfo or empty string
+    const [atomName, setAtomName] = useState(atomInfo?.name || "");
 
     useEffect(() => {
+        // --- FIX: Add null check for atomInfo ---
         if (atomInfo && atomInfo.name) {
             setAtomName(atomInfo.name);
         }
-    }, [atomInfo?.name]);
+        // --- FIX: Add atomInfo to dependency array ---
+    }, [atomInfo]);
+    // --- END FIX ---
+
 
     const handleSave = async () => {
         if (!user || user.isAnonymous) {
@@ -55,9 +58,7 @@ export default function ControlsPanel() {
         try {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-            // --- FIX 2: Use FieldValue type instead of any ---
             const creationData: Omit<AtomCreation, 'id' | 'publishedAt'> & { publishedAt: FieldValue } = {
-            // --- END FIX 2 ---
                 userId: user.uid,
                 userName: user.displayName || 'Anonymous',
                 protons,
@@ -68,7 +69,7 @@ export default function ControlsPanel() {
                 isAntimatter,
                 stability: (atomInfo?.stability ?? 'Unknown') as Stability,
                 predicted: atomInfo?.predicted ?? false,
-                publishedAt: serverTimestamp() // This returns a FieldValue
+                publishedAt: serverTimestamp()
             };
 
 
@@ -93,9 +94,11 @@ export default function ControlsPanel() {
         setIsSaving(false);
     };
 
+    // Use optional chaining and nullish coalescing for safety
     const stability = atomInfo?.stability ?? 'Unknown';
     const symbol = atomInfo?.symbol ?? '?';
     const charge = atomInfo?.charge ?? 0;
+    const currentAtomName = atomInfo?.name ?? "Unknown"; // Get current name safely
 
 
     const getStabilityInfo = () => {
@@ -121,7 +124,8 @@ export default function ControlsPanel() {
                     type="text"
                     value={atomName}
                     onChange={(e) => setAtomName(e.target.value)}
-                    placeholder={atomInfo?.name || "Enter Atom Name"}
+                    // Use currentAtomName safely in placeholder
+                    placeholder={currentAtomName || "Enter Atom Name"}
                     className="text-3xl font-bold font-orbitron text-white bg-transparent border-b-2 border-gray-700 focus:border-cyan-400 text-center outline-none w-full pb-2 mb-2"
                 />
                 <div className="flex items-center justify-center space-x-2">
