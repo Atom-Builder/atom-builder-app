@@ -12,7 +12,7 @@ const bohrShells = [2, 8, 18, 32, 32, 18, 8];
 
 // --- Sub-Components ---
 
-// ... (Electron, Nucleus, OrbitLine components remain the same as the correct version) ...
+// ... (Electron, Nucleus, OrbitLine components remain the same correct version) ...
 interface ElectronProps { /* ... */
     radius: number; speed: number; offset: number; color: Color; orbitAxis?: 'xy' | 'xz' | 'yz'; orbitRadius?: number;
 }
@@ -77,23 +77,7 @@ interface OrbitLineProps { /* ... */
     radius: number; electronColor: Color;
 }
 function OrbitLine({ radius, electronColor }: OrbitLineProps) {
-    const line = useMemo(() => { /* ... line geometry/material logic using THREE.Line ... */
-        const points = [];
-        const segments = 64;
-        for (let i = 0; i <= segments; i++) {
-            const angle = (i / segments) * Math.PI * 2;
-            points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
-        }
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({ color: electronColor, transparent: true, opacity: 0.2 });
-        // Cleanup function for useMemo
-        return () => {
-             geometry.dispose();
-             material.dispose();
-        };
-     }, [radius, electronColor]);
-
-     const lineObject = useMemo(() => {
+    const lineObject = useMemo(() => { /* ... <primitive> logic ... */
         const points = [];
         const segments = 64;
         for (let i = 0; i <= segments; i++) {
@@ -105,7 +89,9 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
         return new THREE.Line(geometry, material);
     }, [radius, electronColor]);
 
-    return <primitive object={lineObject} dispose={null} />;
+    // Ensure dispose is null so R3F doesn't double-dispose when dependencies change
+    // Also add key based on radius/color to force re-creation if needed, though useMemo should handle this
+    return <primitive object={lineObject} dispose={null} key={`${radius}-${electronColor.getHexString()}`} />;
 }
 
 
@@ -116,20 +102,18 @@ interface AtomSceneProps {
     neutrons: number;
     electrons: number;
     isAntimatter: boolean;
-    vizMode: 'bohr' | 'cloud'; // Receive vizMode as a prop
+    vizMode: 'bohr' | 'cloud';
 }
 
 function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: AtomSceneProps) {
-    // const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder(); // <-- REMOVED THIS LINE
-// --- END REFACTOR ---
-
-    const colors = useMemo(() => ({
+    // NO useBuilder() call here
+    const colors = useMemo(() => ({ /* ... color logic ... */
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#888888'),
         electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'),
     }), [isAntimatter]);
 
-    const shells = useMemo(() => {
+    const shells = useMemo(() => { /* ... shell logic ... */
         let remainingElectrons = electrons;
         return bohrShells.map(capacity => {
             const count = Math.min(remainingElectrons, capacity);
@@ -140,19 +124,20 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
 
     return (
         <>
+            {/* ... Lights ... */}
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={1.5} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} color={colors.proton} />
 
-            <Nucleus
+            <Nucleus /* ... pass props ... */
                 protons={protons}
                 neutrons={neutrons}
                 protonColor={colors.proton}
                 neutronColor={colors.neutron}
             />
 
-            {/* Use vizMode prop for conditional rendering */}
-            {vizMode === 'bohr' && shells.map((count, index) => {
+            {/* Use vizMode prop */}
+            {vizMode === 'bohr' && shells.map((count, index) => { /* ... Bohr rendering ... */
                 const radius = (index + 1) * 0.7;
                 return (
                     <group key={`shell-${index}`}>
@@ -169,15 +154,14 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
                         ))}
                     </group>
                 );
-            })}
+             })}
 
-            {vizMode === 'cloud' && Array.from({ length: electrons }).map((_, i) => {
+            {vizMode === 'cloud' && Array.from({ length: electrons }).map((_, i) => { /* ... Cloud rendering ... */
                 const baseRadius = 1 + Math.random() * (shells.length || 1) * 0.5;
                 const speed = 0.3 + Math.random() * 0.4;
                 const offset = Math.random() * Math.PI * 2;
                 const axis = ['xy', 'xz', 'yz'][Math.floor(Math.random() * 3)] as 'xy' | 'xz' | 'yz';
                 const orbitEcc = Math.random() * baseRadius * 0.3;
-
                 return (
                     <Electron
                         key={`cloud-electron-${i}`}
@@ -189,22 +173,23 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
                         orbitRadius={orbitEcc}
                     />
                 );
-            })}
+             })}
         </>
     );
 }
+// --- END REFACTOR ---
+
 
 // --- Main Viewport Wrapper Component ---
 export default function AtomViewport() {
-    // --- FIX: Get builder state here in the parent ---
+    // Get builder state here in the parent
     const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
-    // --- END FIX ---
 
     return (
         <Canvas camera={{ position: [0, 5, 12], fov: 50 }} className="bg-gray-950 rounded-lg">
              <color attach="background" args={['#050505']} />
             <Suspense fallback={null}>
-                {/* --- FIX: Pass state down as props to AtomScene --- */}
+                {/* Pass state down as props */}
                 <AtomScene
                     protons={protons}
                     neutrons={neutrons}
@@ -212,7 +197,6 @@ export default function AtomViewport() {
                     isAntimatter={isAntimatter}
                     vizMode={vizMode}
                 />
-                {/* --- END FIX --- */}
                 <OrbitControls />
             </Suspense>
         </Canvas>
