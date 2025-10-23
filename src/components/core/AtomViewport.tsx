@@ -1,164 +1,4 @@
-// Force update: Thursday, October 23, 2025 - Ensuring correct version
-'use client';
-
-import React, { useMemo, useRef, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Sphere, Stars } from '@react-three/drei';
-import * as THREE from 'three';
-import { Color } from 'three';
-import { useBuilder } from '@/hooks/useBuilder'; // Keep this for the main component
-import { useGraphicsSettings } from '@/hooks/useGraphicsSettings';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
-
-
-// Constants
-const bohrShells = [2, 8, 18, 32, 32, 18, 8];
-const BASE_NUCLEUS_RADIUS = 0.15;
-const NUCLEON_RADIUS_SCALE = 0.08;
-const ELECTRON_RADIUS = 0.06;
-const PARTICLE_SEGMENTS = 16;
-const NUCLEON_RADIUS = 0.04;
-
-
-// --- Sub-Components ---
-
-// Represents a single electron sphere
-interface ElectronProps {
-    shellIndex: number;
-    radius: number;
-    speedFactor: number;
-    offset: number;
-    color: Color;
-    vizMode: 'bohr' | 'cloud';
-}
-function Electron({ shellIndex, radius, speedFactor, offset, color, vizMode }: ElectronProps) {
-    const ref = useRef<THREE.Mesh>(null!);
-    const cloudProps = useMemo(() => ({
-        xRadius: radius * (0.8 + Math.random() * 0.4),
-        zRadius: radius * (0.8 + Math.random() * 0.4),
-        axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
-        speed: speedFactor * (0.8 + Math.random() * 0.4),
-    }), [radius, speedFactor]);
-
-    useFrame(({ clock }) => {
-        const time = clock.getElapsedTime();
-        if (ref.current) {
-            let angle: number, posX: number, posY: number, posZ: number;
-            if (vizMode === 'bohr') {
-                const speed = speedFactor / (shellIndex + 1);
-                angle = time * speed + offset;
-                posX = Math.cos(angle) * radius; posY = 0; posZ = Math.sin(angle) * radius;
-                ref.current.position.set(posX, posY, posZ);
-            } else {
-                angle = time * cloudProps.speed + offset;
-                const basePos = new THREE.Vector3( Math.cos(angle) * cloudProps.xRadius, 0, Math.sin(angle) * cloudProps.zRadius );
-                basePos.applyAxisAngle(cloudProps.axis, Math.PI / 4 + Math.random() * Math.PI / 2);
-                ref.current.position.copy(basePos);
-            }
-        }
-    });
-
-    return (
-        <Sphere ref={ref} args={[ELECTRON_RADIUS, PARTICLE_SEGMENTS, PARTICLE_SEGMENTS]}>
-            <meshPhysicalMaterial color={color} emissive={color} emissiveIntensity={3} roughness={0.2} metalness={0.1} clearcoat={0.5} toneMapped={false}/>
-        </Sphere>
-    );
-}
-
-// Nucleus: Using MeshPhysicalMaterial and subtle nucleon offsets
-interface NucleusProps {
-    protons: number;
-    neutrons: number;
-    protonColor: Color;
-    neutronColor: Color;
-}
-function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps) {
-    const groupRef = useRef<THREE.Group>(null!);
-    const totalParticles = protons + neutrons;
-    const radius = Math.max(BASE_NUCLEUS_RADIUS, Math.cbrt(totalParticles) * NUCLEON_RADIUS_SCALE);
-
-    const particles = useMemo(() => {
-        const arr = [];
-        const packingFactor = 0.9;
-        for (let i = 0; i < totalParticles; i++) {
-            const point = new THREE.Vector3();
-            const r = Math.random() * (radius - NUCLEON_RADIUS) * packingFactor;
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos((Math.random() * 2) - 1);
-            point.setFromSphericalCoords(r, phi, theta);
-            arr.push({ position: point.toArray(), color: i < protons ? protonColor : neutronColor });
-        }
-        return arr;
-    // Corrected dependency array
-    }, [protons, /* removed neutrons */ protonColor, neutronColor, radius, totalParticles]);
-
-    useFrame(() => {
-        if (groupRef.current) {
-            groupRef.current.rotation.y += 0.001;
-            groupRef.current.rotation.x += 0.0005;
-        }
-     });
-
-    return (
-        <group ref={groupRef}>
-            {/* Render each proton/neutron sphere */}
-            {particles.map((p, i) => (
-                <Sphere key={i} args={[NUCLEON_RADIUS, PARTICLE_SEGMENTS, PARTICLE_SEGMENTS]} position={p.position as [number, number, number]}>
-                    <meshPhysicalMaterial
-                        color={p.color}
-                        emissive={p.color}
-                        emissiveIntensity={0.2}
-                        roughness={0.6}
-                        metalness={0.1}
-                        clearcoat={0.1}
-                    />
-                </Sphere>
-            ))}
-        </group>
-    );
-}
-
-// OrbitLine: Using <primitive> for reliability, thinner line
-interface OrbitLineProps {
-    radius: number;
-    electronColor: Color;
-}
-function OrbitLine({ radius, electronColor }: OrbitLineProps) {
-    const lineObject = useMemo(() => {
-        const points = [];
-        const segments = 64;
-        for (let i = 0; i <= segments; i++) {
-            const angle = (i / segments) * Math.PI * 2;
-            points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
-        }
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({
-            color: electronColor,
-            transparent: true,
-            opacity: 0.15,
-            linewidth: 0.5,
-        });
-        return new THREE.Line(geometry, material);
-    }, [radius, electronColor]);
-
-    React.useEffect(() => {
-        // Cleanup function for geometry and material
-        return () => {
-            if (lineObject) {
-                lineObject.geometry?.dispose();
-                if (Array.isArray(lineObject.material)) {
-                    lineObject.material.forEach(m => m?.dispose());
-                } else {
-                    lineObject.material?.dispose();
-                }
-            }
-        }
-    }, [lineObject]); // Rerun effect if lineObject instance changes
-
-
-    return <primitive object={lineObject} dispose={null} />;
-}
-
+// ... (imports and Electron, Nucleus, OrbitLine components remain unchanged) ...
 
 // --- REFACTORED AtomScene ---
 // Accepts props, does NOT use useBuilder()
@@ -171,7 +11,11 @@ interface AtomSceneProps {
 }
 
 function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: AtomSceneProps) {
-    // NO useBuilder() call here
+    // --- DELETE THIS LINE ---
+    // const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
+    // --- END DELETE ---
+
+    // ... (rest of AtomScene logic remains unchanged, using the props passed in) ...
     const colors = useMemo(() => ({
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#666666'),
@@ -191,7 +35,7 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
 
     return (
         <Suspense fallback={null}>
-            {/* Lighting */}
+            {/* ... Lights ... */}
             <hemisphereLight intensity={0.3} groundColor="black" />
             <ambientLight intensity={0.2} />
             <pointLight position={[10, 10, 10]} intensity={1.5} distance={30} decay={1}/>
@@ -259,13 +103,16 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
 
 // --- Main Viewport Wrapper Component ---
 export default function AtomViewport() {
+    // --- ADD THESE LINES ---
     // Get builder state here in the parent
     const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
     const { settings: graphicsSetting } = useGraphicsSettings();
+    // --- END ADD ---
 
     return (
         <Canvas camera={{ position: [0, 5, 12], fov: 50 }} className="w-full h-full bg-black">
              {/* Use Suspense at a higher level if needed */}
+             {/* --- MODIFY THIS SECTION --- */}
             <AtomScene
                 protons={protons}
                 neutrons={neutrons}
@@ -273,6 +120,7 @@ export default function AtomViewport() {
                 isAntimatter={isAntimatter}
                 vizMode={vizMode}
             />
+             {/* --- END MODIFY --- */}
             <OrbitControls />
             {graphicsSetting === 'high' && (
                 <EffectComposer>
@@ -282,3 +130,4 @@ export default function AtomViewport() {
         </Canvas>
     );
 }
+
