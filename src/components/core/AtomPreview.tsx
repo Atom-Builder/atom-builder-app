@@ -6,7 +6,6 @@ import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
 
-// ... (Electron component remains the same) ...
 // Electron calculation/rendering constants
 const bohrShells = [2, 8, 18, 32, 32, 18, 8]; // Max electrons per shell
 
@@ -18,8 +17,8 @@ interface ElectronProps {
     speed: number;
     offset: number;
     color: Color;
-    orbitAxis?: 'xy' | 'xz' | 'yz'; // For cloud model
-    orbitRadius?: number;          // For cloud model eccentricity
+    orbitAxis?: 'xy' | 'xz' | 'yz';
+    orbitRadius?: number;
 }
 
 function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius = 0 }: ElectronProps) {
@@ -29,7 +28,7 @@ function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius 
         const time = clock.getElapsedTime();
         if (ref.current) {
             const angle = time * speed + offset;
-            const r = radius + Math.sin(time * speed * 2 + offset) * orbitRadius; // Varying radius for cloud
+            const r = radius + Math.sin(time * speed * 2 + offset) * orbitRadius;
 
             switch (orbitAxis) {
                 case 'xy':
@@ -64,7 +63,6 @@ function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius 
     );
 }
 
-
 // Represents the nucleus (protons + neutrons)
 interface NucleusProps {
     protons: number;
@@ -90,9 +88,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
                 Math.random() * 2 - 1
             );
             if (point.length() === 0) point.set(1, 0, 0);
-            // --- FIX: Ensure points are within the calculated radius ---
             point.normalize().multiplyScalar(Math.random() * (radius - particleRadius));
-            // --- END FIX ---
 
             arr.push({
                 position: point.toArray(),
@@ -100,9 +96,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             });
         }
         return arr;
-        // --- FIX: Added radius and totalParticles to dependencies ---
-    }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]);
-    // --- END FIX ---
+    }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]); // Added radius, totalParticles
 
 
     useFrame(() => {
@@ -128,11 +122,10 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     );
 }
 
-// ... (OrbitLine, AtomScene, AtomPreview components remain the same) ...
 // Draws the orbit line for Bohr model
 interface OrbitLineProps {
     radius: number;
-    electronColor: Color; // Pass color for the line
+    electronColor: Color;
 }
 function OrbitLine({ radius, electronColor }: OrbitLineProps) {
     const points = useMemo(() => {
@@ -142,14 +135,17 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
             const angle = (i / segments) * Math.PI * 2;
             pts.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
         }
-        return pts;
+        return new THREE.BufferGeometry().setFromPoints(pts); // Create geometry here
     }, [radius]);
 
+    // --- FIX Starts Here ---
+    // Use the geometry prop correctly with the R3F <line> primitive
     return (
-        <line geometry={new THREE.BufferGeometry().setFromPoints(points)}>
+        <line geometry={points}>
             <lineBasicMaterial color={electronColor} transparent opacity={0.2} />
         </line>
     );
+    // --- FIX Ends Here ---
 }
 
 // Main Scene Component for Preview
@@ -231,4 +227,3 @@ export default function AtomPreview({ protons, neutrons, electrons, isAntimatter
         </Canvas>
     );
 }
-
