@@ -5,25 +5,16 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
-// NO useBuilder import
 
-// Electron calculation/rendering constants
+// ... (Electron component remains the same) ...
 const bohrShells = [2, 8, 18, 32, 32, 18, 8];
 
-// --- Components ---
-
-// Represents a single electron sphere
-interface ElectronProps {
-    radius: number;
-    speed: number;
-    offset: number;
-    color: Color;
-    orbitAxis?: 'xy' | 'xz' | 'yz';
-    orbitRadius?: number;
+interface ElectronProps { /* ... */
+    radius: number; speed: number; offset: number; color: Color; orbitAxis?: 'xy' | 'xz' | 'yz'; orbitRadius?: number;
 }
 function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius = 0 }: ElectronProps) {
     const ref = useRef<THREE.Mesh>(null!);
-    useFrame(({ clock }) => {
+    useFrame(({ clock }) => { /* ... movement logic ... */
         const time = clock.getElapsedTime();
         if (ref.current) {
             const angle = time * speed + offset;
@@ -42,7 +33,7 @@ function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius 
     );
 }
 
-// Represents the nucleus (protons + neutrons)
+
 interface NucleusProps {
     protons: number;
     neutrons: number;
@@ -53,6 +44,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     const groupRef = useRef<THREE.Group>(null!);
     const totalParticles = protons + neutrons;
     const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08);
+
     const particles = useMemo(() => {
         const arr = [];
         const particleRadius = 0.05;
@@ -64,8 +56,10 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             arr.push({ position: point.toArray(), color: i < protons ? protonColor : neutronColor });
         }
         return arr;
-        // Corrected dependency array (includes radius which depends on totalParticles)
-    }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]);
+    // --- FIX: Removed unnecessary 'neutrons' dependency ---
+    }, [protons, protonColor, neutronColor, radius, totalParticles]);
+    // --- END FIX ---
+
     useFrame(() => {
         if (groupRef.current) {
             groupRef.current.rotation.y += 0.001;
@@ -83,31 +77,12 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     );
 }
 
-// Draws the orbit line for Bohr model using <primitive>
-interface OrbitLineProps {
-    radius: number;
-    electronColor: Color;
+// ... (OrbitLine, AtomScene, AtomPreview components remain the same) ...
+interface OrbitLineProps { /* ... */
+    radius: number; electronColor: Color;
 }
 function OrbitLine({ radius, electronColor }: OrbitLineProps) {
-    const line = useMemo(() => {
-        const points = [];
-        const segments = 64;
-        for (let i = 0; i <= segments; i++) {
-            const angle = (i / segments) * Math.PI * 2;
-            points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
-        }
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({ color: electronColor, transparent: true, opacity: 0.2 });
-        // Cleanup function for useMemo
-        return () => {
-             geometry.dispose();
-             material.dispose();
-        };
-        // Dependency array includes radius and color
-    }, [radius, electronColor]);
-
-     // Create the THREE.Line object outside useMemo to apply the memoized geometry/material
-     const lineObject = useMemo(() => {
+    const lineObject = useMemo(() => { /* ... <primitive> logic ... */
         const points = [];
         const segments = 64;
         for (let i = 0; i <= segments; i++) {
@@ -118,66 +93,45 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
         const material = new THREE.LineBasicMaterial({ color: electronColor, transparent: true, opacity: 0.2 });
         return new THREE.Line(geometry, material);
     }, [radius, electronColor]);
-
-
-    // Use <primitive> to render the THREE.Line object
-    // Ensure dispose is null so R3F doesn't double-dispose
+     React.useEffect(() => { // Cleanup effect
+         return () => {
+             lineObject.geometry.dispose();
+             lineObject.material.dispose();
+         }
+     }, [lineObject]);
     return <primitive object={lineObject} dispose={null} />;
 }
 
-
-// Refactored AtomScene - Accepts props, does NOT use useBuilder()
-interface AtomSceneProps {
-    protons: number;
-    neutrons: number;
-    electrons: number;
-    isAntimatter: boolean;
+interface AtomSceneProps { /* ... */
+    protons: number; neutrons: number; electrons: number; isAntimatter: boolean;
 }
-
 function AtomScene({ protons, neutrons, electrons, isAntimatter }: AtomSceneProps) {
-    const colors = useMemo(() => ({
+    const colors = useMemo(() => ({ /* ... */
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#888888'),
         electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'),
-    }), [isAntimatter]);
-
-    const shells = useMemo(() => {
+     }), [isAntimatter]);
+    const shells = useMemo(() => { /* ... */
         let remainingElectrons = electrons;
         return bohrShells.map(capacity => {
             const count = Math.min(remainingElectrons, capacity);
             remainingElectrons -= count;
             return count;
         }).filter(count => count > 0);
-    }, [electrons]);
-
+     }, [electrons]);
     return (
-        <>
+        <> /* ... Scene content ... */
             <ambientLight intensity={0.6} />
             <pointLight position={[8, 8, 8]} intensity={1.5} />
             <pointLight position={[-8, -8, -8]} intensity={0.5} color={colors.proton} />
-
-            <Nucleus
-                protons={protons}
-                neutrons={neutrons}
-                protonColor={colors.proton}
-                neutronColor={colors.neutron}
-            />
-
-            {/* Always render Bohr for previews */}
+            <Nucleus protons={protons} neutrons={neutrons} protonColor={colors.proton} neutronColor={colors.neutron}/>
             {shells.map((count, index) => {
                  const radius = (index + 1) * 0.7;
                  return (
                     <group key={`shell-${index}`}>
                         <OrbitLine radius={radius} electronColor={colors.electron} />
                         {Array.from({ length: count }).map((_, i) => (
-                            <Electron
-                                key={`electron-${index}-${i}`}
-                                radius={radius}
-                                speed={0.5 / (index + 1)}
-                                offset={(i / count) * Math.PI * 2}
-                                color={colors.electron}
-                                orbitAxis="xz"
-                            />
+                            <Electron key={`electron-${index}-${i}`} radius={radius} speed={0.5 / (index + 1)} offset={(i / count) * Math.PI * 2} color={colors.electron} orbitAxis="xz"/>
                         ))}
                     </group>
                  );
@@ -186,26 +140,15 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter }: AtomSceneProp
     );
 }
 
-// Main Preview Component Wrapper
-interface AtomPreviewProps {
-    protons: number;
-    neutrons: number;
-    electrons: number;
-    isAntimatter: boolean;
+interface AtomPreviewProps { /* ... */
+    protons: number; neutrons: number; electrons: number; isAntimatter: boolean;
 }
-
 export default function AtomPreview({ protons, neutrons, electrons, isAntimatter }: AtomPreviewProps) {
     return (
         <Canvas camera={{ position: [0, 5, 10], fov: 50 }}>
              <color attach="background" args={['#0a0a0a']} />
             <Suspense fallback={null}>
-                {/* Pass props down to the refactored AtomScene */}
-                <AtomScene
-                    protons={protons}
-                    neutrons={neutrons}
-                    electrons={electrons}
-                    isAntimatter={isAntimatter}
-                />
+                <AtomScene protons={protons} neutrons={neutrons} electrons={electrons} isAntimatter={isAntimatter}/>
             </Suspense>
         </Canvas>
     );
