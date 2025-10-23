@@ -5,9 +5,10 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
-import { useBuilder } from '@/hooks/useBuilder';
+import { useBuilder } from '@/hooks/useBuilder'; // Keep this for the main component
 import { useGraphicsSettings } from '@/hooks/useGraphicsSettings';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
+
 
 // Constants
 const bohrShells = [2, 8, 18, 32, 32, 18, 8];
@@ -15,9 +16,7 @@ const BASE_NUCLEUS_RADIUS = 0.15;
 const NUCLEON_RADIUS_SCALE = 0.08;
 const ELECTRON_RADIUS = 0.06;
 const PARTICLE_SEGMENTS = 16;
-// --- FIX: Define particleRadius constant here ---
-const NUCLEON_RADIUS = 0.04; // Use a constant for nucleon size
-// --- END FIX ---
+const NUCLEON_RADIUS = 0.04;
 
 
 // --- Sub-Components ---
@@ -76,14 +75,12 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     const groupRef = useRef<THREE.Group>(null!);
     const totalParticles = protons + neutrons;
     const radius = Math.max(BASE_NUCLEUS_RADIUS, Math.cbrt(totalParticles) * NUCLEON_RADIUS_SCALE);
-    // Note: particleRadius is now defined outside as NUCLEON_RADIUS
 
     const particles = useMemo(() => {
         const arr = [];
         const packingFactor = 0.9;
         for (let i = 0; i < totalParticles; i++) {
             const point = new THREE.Vector3();
-            // Use NUCLEON_RADIUS here
             const r = Math.random() * (radius - NUCLEON_RADIUS) * packingFactor;
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos((Math.random() * 2) - 1);
@@ -91,6 +88,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             arr.push({ position: point.toArray(), color: i < protons ? protonColor : neutronColor });
         }
         return arr;
+    // Corrected dependency array
     }, [protons, /* removed neutrons */ protonColor, neutronColor, radius, totalParticles]);
 
     useFrame(() => {
@@ -104,9 +102,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
         <group ref={groupRef}>
             {/* Render each proton/neutron sphere */}
             {particles.map((p, i) => (
-                // --- FIX: Use the NUCLEON_RADIUS constant ---
                 <Sphere key={i} args={[NUCLEON_RADIUS, PARTICLE_SEGMENTS, PARTICLE_SEGMENTS]} position={p.position as [number, number, number]}>
-                {/* --- END FIX --- */}
                     <meshPhysicalMaterial
                         color={p.color}
                         emissive={p.color}
@@ -159,7 +155,8 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
 }
 
 
-// Main Scene Component: Handles lighting, background, and rendering modes
+// --- REFACTORED AtomScene ---
+// Accepts props, does NOT use useBuilder()
 interface AtomSceneProps {
     protons: number;
     neutrons: number;
@@ -167,7 +164,9 @@ interface AtomSceneProps {
     isAntimatter: boolean;
     vizMode: 'bohr' | 'cloud';
 }
+
 function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: AtomSceneProps) {
+    // NO useBuilder() call here
     const colors = useMemo(() => ({
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#666666'),
@@ -250,14 +249,18 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
         </Suspense>
     );
 }
+// --- END REFACTOR ---
+
 
 // --- Main Viewport Wrapper Component ---
 export default function AtomViewport() {
+    // Get builder state here in the parent
     const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
     const { settings: graphicsSetting } = useGraphicsSettings();
 
     return (
         <Canvas camera={{ position: [0, 5, 12], fov: 50 }} className="w-full h-full bg-black">
+             {/* Use Suspense at a higher level if needed */}
             <AtomScene
                 protons={protons}
                 neutrons={neutrons}
