@@ -96,7 +96,9 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             });
         }
         return arr;
-    }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]); // Added radius, totalParticles
+        // --- FIX: Corrected dependency array ---
+    }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]);
+    // --- END FIX ---
 
 
     useFrame(() => {
@@ -140,6 +142,7 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
 
     // --- FIX Starts Here ---
     // Use the geometry prop correctly with the R3F <line> primitive
+    // Ensure this syntax is exactly as shown below.
     return (
         <line geometry={points}>
             <lineBasicMaterial color={electronColor} transparent opacity={0.2} />
@@ -147,6 +150,7 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
     );
     // --- FIX Ends Here ---
 }
+
 
 // Main Scene Component for Preview
 function AtomScene({ protons, neutrons, electrons, isAntimatter }: {
