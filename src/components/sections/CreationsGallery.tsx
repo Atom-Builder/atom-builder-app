@@ -35,7 +35,7 @@ export default function CreationsGallery() {
             });
             setCreations(newCreations);
             setLoading(false);
-        }, (error) => { // Type the error
+        }, (error: Error) => { // Type the error
             console.error("Error fetching user creations: ", error);
             setLoading(false);
         });
