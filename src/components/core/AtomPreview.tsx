@@ -1,15 +1,14 @@
 'use client';
 
-import React, { useMemo, useRef } from 'react';
-// import { Canvas, useFrame, ThreeElements } from '@react-three/fiber'; // <-- FIX: Removed ThreeElements
+// --- FIX: Added Suspense ---
+import React, { useMemo, useRef, Suspense } from 'react';
+// --- END FIX ---
 import { Canvas, useFrame } from '@react-three/fiber';
-// import { OrbitControls, Sphere, Points, PointMaterial } from '@react-three/drei'; // <-- FIX: Removed Points, PointMaterial
 import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
-// Removed useBuilder import as it's not needed here
 
-// Constants
+// Electron calculation/rendering constants
 const bohrShells = [2, 8, 18, 32, 32, 18, 8]; // Max electrons per shell
 
 // --- Components ---
@@ -76,39 +75,36 @@ interface NucleusProps {
 
 function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps) {
     const groupRef = useRef<THREE.Group>(null!);
-    const totalParticles = protons + neutrons; // <-- Keep this calculation
+    const totalParticles = protons + neutrons;
     const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08); // Scale nucleus size
 
     // Memoize particle positions for performance
     const particles = useMemo(() => {
         const arr = [];
-        const particleRadius = 0.05; // Smaller radius for individual nucleons
-        // const sphere = new THREE.Sphere(new THREE.Vector3(), radius - particleRadius); // <-- FIX: Removed unused 'sphere' variable
+        const particleRadius = 0.05;
 
         for (let i = 0; i < totalParticles; i++) {
             const point = new THREE.Vector3();
-            // Distribute points somewhat randomly within the nucleus sphere
             point.set(
                 Math.random() * 2 - 1,
                 Math.random() * 2 - 1,
                 Math.random() * 2 - 1
             );
-            if (point.length() === 0) point.set(1, 0, 0); // Avoid center
+            if (point.length() === 0) point.set(1, 0, 0);
             point.normalize().multiplyScalar(Math.random() * (radius - particleRadius));
 
             arr.push({
-                position: point.toArray(), // Store as array [x, y, z]
+                position: point.toArray(),
                 color: i < protons ? protonColor : neutronColor,
             });
         }
         return arr;
-        // --- FIX: Added totalParticles to dependency array ---
-    }, [protons, neutrons, radius, protonColor, neutronColor, totalParticles]);
+        // --- FIX: Corrected dependency array ---
+    }, [protons, neutrons, protonColor, neutronColor]);
     // --- END FIX ---
 
 
     useFrame(() => {
-        // Subtle rotation for visual interest
         if (groupRef.current) {
             groupRef.current.rotation.y += 0.001;
             groupRef.current.rotation.x += 0.0005;
@@ -134,8 +130,9 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
 // Draws the orbit line for Bohr model
 interface OrbitLineProps {
     radius: number;
+    electronColor: Color; // Pass color for the line
 }
-function OrbitLine({ radius }: OrbitLineProps) {
+function OrbitLine({ radius, electronColor }: OrbitLineProps) {
     const points = useMemo(() => {
         const pts = [];
         const segments = 64;
@@ -148,7 +145,7 @@ function OrbitLine({ radius }: OrbitLineProps) {
 
     return (
         <line geometry={new THREE.BufferGeometry().setFromPoints(points)}>
-            <lineBasicMaterial color="#0FF" transparent opacity={0.3} />
+            <lineBasicMaterial color={electronColor} transparent opacity={0.2} />
         </line>
     );
 }
@@ -193,7 +190,7 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter }: {
                  const radius = (index + 1) * 0.7;
                  return (
                     <group key={`shell-${index}`}>
-                        <OrbitLine radius={radius} />
+                        <OrbitLine radius={radius} electronColor={colors.electron} />
                         {Array.from({ length: count }).map((_, i) => (
                             <Electron
                                 key={`electron-${index}-${i}`}
@@ -221,7 +218,9 @@ export default function AtomPreview({ protons, neutrons, electrons, isAntimatter
     return (
         <Canvas camera={{ position: [0, 5, 10], fov: 50 }}>
              <color attach="background" args={['#0a0a0a']} />
+             {/* --- FIX: Use imported Suspense --- */}
             <Suspense fallback={null}>
+            {/* --- END FIX --- */}
                 <AtomScene
                     protons={protons}
                     neutrons={neutrons}

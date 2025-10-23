@@ -2,15 +2,16 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Settings, X, Menu, LogIn, LogOut, Loader2, User as UserIcon } from 'lucide-react'; // Added UserIcon
+import { Settings, X, Menu, LogIn, LogOut, Loader2, User as UserIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function Navbar({ onSettingsClick }: { onSettingsClick: () => void }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const { user, signInWithGoogle, signOut, loading: authLoading } = useAuth(); // Renamed loading to authLoading for clarity
+    const { user, signInWithGoogle, signOut, loading: authLoading } = useAuth();
 
-    // Determine if the current user is anonymous or signed in with Google
-    const isAnonymous = !authLoading && (!user || user.isAnonymous);
+    // --- FIX: Removed unused 'isAnonymous' ---
+    // const isAnonymous = !authLoading && (!user || user.isAnonymous);
+    // --- END FIX ---
     const isSignedIn = !authLoading && user && !user.isAnonymous;
 
     const navLinks = [
@@ -22,12 +23,12 @@ export default function Navbar({ onSettingsClick }: { onSettingsClick: () => voi
 
     const handleSignIn = async () => {
         await signInWithGoogle();
-        setIsMenuOpen(false); // Close menu after sign-in attempt
+        setIsMenuOpen(false);
     };
 
     const handleSignOut = async () => {
         await signOut();
-        setIsMenuOpen(false); // Close menu after sign-out
+        setIsMenuOpen(false);
     };
 
 
@@ -183,4 +184,3 @@ export default function Navbar({ onSettingsClick }: { onSettingsClick: () => voi
         </nav>
     );
 }
-

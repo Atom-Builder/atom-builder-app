@@ -22,7 +22,7 @@ import {
     getDoc,
     Firestore,
     serverTimestamp,
-    FieldValue // Keep FieldValue for serverTimestamp
+    // FieldValue // <-- FIX: Removed unused import
 } from 'firebase/firestore';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
@@ -39,35 +39,28 @@ const firebaseConfig = {
 
 // Initialize Firebase
 let app: FirebaseApp;
-// --- FIX: Revert back to let ---
 let auth: Auth;
 export let db: Firestore;
-// --- END FIX ---
-
 
 if (!getApps().length) {
-    // Initialize Firebase only if it hasn't been initialized yet
      try {
         app = initializeApp(firebaseConfig);
-        auth = getAuth(app); // Assign here after init
-        db = getFirestore(app); // Assign here after init
+        auth = getAuth(app);
+        db = getFirestore(app);
      } catch (error) {
          console.error("Firebase initialization error:", error);
-         // Handle initialization error appropriately - maybe show error to user
-         // For now, ensure auth and db are assigned null or handled gracefully
-         // @ts-ignore // Ignore potential unassigned error if init fails catastrophically
+         // --- FIX: Use @ts-expect-error ---
+         // @ts-expect-error // Ignore potential unassigned error if init fails catastrophically
          auth = null;
-         // @ts-ignore
+         // @ts-expect-error
          db = null;
+         // --- END FIX ---
      }
-
 } else {
-    // Get the default app if already initialized
     app = getApps()[0];
-    auth = getAuth(app); // Assign here
-    db = getFirestore(app); // Assign here
+    auth = getAuth(app);
+    db = getFirestore(app);
 }
-
 
 interface AuthContextType {
     user: User | null;
@@ -83,17 +76,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Ensure auth is initialized before setting up listener
         if (!auth) {
              console.error("Firebase Auth not initialized. Cannot set up listener.");
-             setLoading(false); // Stop loading if auth failed
+             setLoading(false);
              return;
         }
 
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUser(user);
-                // Ensure db is initialized before Firestore operations
                 if (db) {
                     const userRef = doc(db, 'users', user.uid);
                     const userSnap = await getDoc(userRef);
@@ -114,20 +105,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 } else {
                     console.error("Firestore DB not initialized. Cannot check/create user doc.")
                 }
-                setLoading(false); // Set loading false after user logic
+                setLoading(false);
             } else {
                  try {
                      await signInAnonymously(auth);
-                     // Let the next onAuthStateChanged event handle setting the anonymous user
                  } catch (error) {
                      console.error("Anonymous sign-in failed: ", error);
-                     setLoading(false); // Stop loading if anonymous sign-in fails
+                     setLoading(false);
                  }
             }
         });
 
          return () => unsubscribe();
-    }, []); // Empty dependency array means this runs only once on mount
+    }, []);
 
 
     const signInWithGoogle = async () => {
@@ -140,7 +130,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             await signInWithPopup(auth, provider);
             toast.success('Signed in successfully!');
-            // onAuthStateChanged will handle setting user and setLoading(false)
         } catch (error: unknown) {
             console.error("Google sign-in failed: ", error);
              if (error instanceof Error) {
@@ -161,7 +150,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             await firebaseSignOut(auth);
             toast.success('Signed out.');
-             // onAuthStateChanged will handle anonymous sign-in and setLoading(false)
         } catch (error: unknown) {
             console.error("Sign-out failed: ", error);
              if (error instanceof Error) {
@@ -187,3 +175,4 @@ export const useAuth = (): AuthContextType => {
     }
     return context;
 };
+
