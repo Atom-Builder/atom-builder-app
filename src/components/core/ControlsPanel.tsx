@@ -15,10 +15,12 @@ import {
     Loader2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { db } from '@/hooks/useAuth'; // Assuming db is exported from useAuth
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/hooks/useAuth';
+// --- FIX 1: Import FieldValue ---
+import { collection, addDoc, serverTimestamp, FieldValue } from 'firebase/firestore';
+// --- END FIX 1 ---
 import toast from 'react-hot-toast';
-import { AtomCreation, Stability } from '@/types'; // Import necessary types
+import { AtomCreation, Stability } from '@/types';
 
 export default function ControlsPanel() {
     const {
@@ -37,12 +39,11 @@ export default function ControlsPanel() {
     const [isPublic, setIsPublic] = useState(false);
     const [atomName, setAtomName] = useState("");
 
-    // Update local atom name when builder's atomInfo changes
     useEffect(() => {
-        if (atomInfo.name) {
+        if (atomInfo && atomInfo.name) {
             setAtomName(atomInfo.name);
         }
-    }, [atomInfo.name]);
+    }, [atomInfo?.name]);
 
     const handleSave = async () => {
         if (!user || user.isAnonymous) {
@@ -54,37 +55,34 @@ export default function ControlsPanel() {
         try {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-            // Define the type for the data being saved (excluding 'id' which Firestore generates)
-            // Ensure stability is explicitly cast if needed, though atomInfo should provide the correct type.
-            const creationData: Omit<AtomCreation, 'id' | 'publishedAt'> & { publishedAt: any } = {
+            // --- FIX 2: Use FieldValue type instead of any ---
+            const creationData: Omit<AtomCreation, 'id' | 'publishedAt'> & { publishedAt: FieldValue } = {
+            // --- END FIX 2 ---
                 userId: user.uid,
                 userName: user.displayName || 'Anonymous',
                 protons,
                 neutrons,
                 electrons,
-                atomName: atomName || atomInfo.name, // Use custom name or default
-                isPublic: isPublic, // Set based on state for private save
+                atomName: atomName || (atomInfo ? atomInfo.name : 'Unknown'),
+                isPublic: isPublic,
                 isAntimatter,
-                stability: atomInfo.stability as Stability, // Explicit cast if atomInfo.stability could be wider string
-                predicted: atomInfo.predicted,
-                publishedAt: serverTimestamp() // Firestore Server Timestamp
+                stability: (atomInfo?.stability ?? 'Unknown') as Stability,
+                predicted: atomInfo?.predicted ?? false,
+                publishedAt: serverTimestamp() // This returns a FieldValue
             };
 
 
-            // Save to user's private collection
             const userCreationsCol = collection(db, `artifacts/${appId}/users/${user.uid}/creations`);
             await addDoc(userCreationsCol, creationData);
 
-            // If public, also save to public collection
             if (isPublic) {
                 const publicCreationsCol = collection(db, `artifacts/${appId}/public/data/creations`);
-                // Ensure isPublic is true for the public record
                 await addDoc(publicCreationsCol, { ...creationData, isPublic: true });
             }
 
             toast.success("Creation saved successfully!");
 
-        } catch (error) { // ***** FIX: Explicitly type the error *****
+        } catch (error: unknown) {
             console.error("Error saving creation: ", error);
             if (error instanceof Error) {
                 toast.error(error.message);
@@ -95,8 +93,13 @@ export default function ControlsPanel() {
         setIsSaving(false);
     };
 
+    const stability = atomInfo?.stability ?? 'Unknown';
+    const symbol = atomInfo?.symbol ?? '?';
+    const charge = atomInfo?.charge ?? 0;
+
+
     const getStabilityInfo = () => {
-        switch (atomInfo.stability) {
+        switch (stability) {
             case 'Stable':
                 return { icon: CheckCircle, color: 'text-green-400', text: 'Stable Isotope' };
             case 'Unstable':
@@ -118,7 +121,7 @@ export default function ControlsPanel() {
                     type="text"
                     value={atomName}
                     onChange={(e) => setAtomName(e.target.value)}
-                    placeholder="Enter Atom Name"
+                    placeholder={atomInfo?.name || "Enter Atom Name"}
                     className="text-3xl font-bold font-orbitron text-white bg-transparent border-b-2 border-gray-700 focus:border-cyan-400 text-center outline-none w-full pb-2 mb-2"
                 />
                 <div className="flex items-center justify-center space-x-2">
@@ -128,7 +131,7 @@ export default function ControlsPanel() {
                     </span>
                 </div>
                 <p className="text-sm text-gray-400">
-                    Symbol: {atomInfo.symbol} | Charge: {atomInfo.charge > 0 ? '+' : ''}{atomInfo.charge}
+                    Symbol: {symbol} | Charge: {charge > 0 ? '+' : ''}{charge}
                 </p>
             </div>
 
@@ -218,7 +221,7 @@ export default function ControlsPanel() {
                 <Button
                     onClick={handleSave}
                     className="w-full h-12 text-lg"
-                    disabled={isSaving || !user || user.isAnonymous} // Also disable if anonymous
+                    disabled={isSaving || !user || user.isAnonymous}
                 >
                     {isSaving ? <Loader2 className="w-6 h-6 animate-spin mr-2" /> : <Save className="w-6 h-6 mr-2" />}
                     {isSaving ? 'Saving...' : 'Save Atom'}
@@ -228,7 +231,6 @@ export default function ControlsPanel() {
                     <p className="text-xs text-center text-yellow-400">Sign in to save and publish your creations.</p>
                 )}
 
-                {/* Publish Toggle */}
                 {user && !user.isAnonymous && (
                     <div className="flex items-center justify-center space-x-2 pt-2">
                         <Switch
