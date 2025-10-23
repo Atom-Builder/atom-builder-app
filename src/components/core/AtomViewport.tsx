@@ -1,193 +1,264 @@
 'use client';
 
-import React from 'react'; // <-- THIS IS THE FIX. Add this line.
+import React, { useMemo, useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere } from '@react-three/drei';
-import { useBuilder } from '@/hooks/useBuilder';
 import * as THREE from 'three';
-import { useMemo, useRef } from 'react';
+import { Color } from 'three';
+import { useBuilder } from '@/hooks/useBuilder';
 
-// Helper function to calculate electron shell distribution
-const calculateElectronShells = (electronCount: number): number[] => {
-  const shells: number[] = [];
-  let remainingElectrons = electronCount;
-  // Simplified shell capacities for visual balance
-  const capacities = [2, 8, 8, 18, 18, 32, 32]; 
-  
-  for (const capacity of capacities) {
-    if (remainingElectrons <= 0) break;
-    const electronsInShell = Math.min(remainingElectrons, capacity);
-    shells.push(electronsInShell);
-    remainingElectrons -= electronsInShell;
-  }
-  
-  // If there are still electrons left (more than 118), dump them in the last shell
-  if (remainingElectrons > 0) {
-    if (shells.length < capacities.length) {
-       shells.push(remainingElectrons);
-    } else {
-       shells[shells.length - 1] += remainingElectrons;
-    }
-  }
-  return shells;
-};
+// Constants
+const bohrShells = [2, 8, 18, 32, 32, 18, 8]; // Max electrons per shell
 
-// --- UPDATED ELECTRON COMPONENT ---
-const Electron = ({ shellRadius, index, totalInShell, vizMode }: {
-  shellRadius: number;
-  index: number;
-  totalInShell: number;
-  vizMode: 'bohr' | 'cloud';
-}) => {
-  const ref = useRef<THREE.Mesh>(null!);
-  
-  // useMemo to create stable random values for the cloud model
-  const { angleOffset, speed, orbitalPlane } = useMemo(() => {
-    // This creates a random 3D rotation axis
-    const randomAxis = new THREE.Vector3(
-      Math.random() * 2 - 1,
-      Math.random() * 2 - 1,
-      Math.random() * 2 - 1
-    ).normalize();
-    
-    // This creates a random angle to rotate around that axis
-    const randomAngle = Math.random() * Math.PI;
+// --- Components ---
 
-    // This is the quaternion that defines the random orbital plane
-    const plane = new THREE.Quaternion().setFromAxisAngle(randomAxis, randomAngle);
+// Represents a single electron sphere
+interface ElectronProps {
+    radius: number;
+    speed: number;
+    offset: number;
+    color: Color;
+    orbitAxis?: 'xy' | 'xz' | 'yz'; // For cloud model
+    orbitRadius?: number;          // For cloud model eccentricity
+}
 
-    return {
-      angleOffset: (index / totalInShell) * Math.PI * 2,
-      speed: 0.5 + Math.random() * 0.2, // Each electron has a slightly different speed
-      orbitalPlane: plane,
-    };
-  }, [index, totalInShell]); // These values are stable per electron
+function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius = 0 }: ElectronProps) {
+    const ref = useRef<THREE.Mesh>(null!);
 
-  useFrame(({ clock }) => {
-    const time = clock.getElapsedTime();
-    const x = shellRadius * Math.cos(time * speed + angleOffset);
-    const z = shellRadius * Math.sin(time * speed + angleOffset);
+    useFrame(({ clock }) => {
+        const time = clock.getElapsedTime();
+        if (ref.current) {
+            const angle = time * speed + offset;
+            const r = radius + Math.sin(time * speed * 2 + offset) * orbitRadius; // Varying radius for cloud
 
-    // Start with a basic orbit on the XZ plane
-    const position = new THREE.Vector3(x, 0, z);
+            switch (orbitAxis) {
+                case 'xy':
+                    ref.current.position.x = Math.cos(angle) * r;
+                    ref.current.position.y = Math.sin(angle) * r;
+                    ref.current.position.z = 0;
+                    break;
+                case 'yz':
+                    ref.current.position.x = 0;
+                    ref.current.position.y = Math.cos(angle) * r;
+                    ref.current.position.z = Math.sin(angle) * r;
+                    break;
+                case 'xz':
+                default:
+                    ref.current.position.x = Math.cos(angle) * r;
+                    ref.current.position.y = 0;
+                    ref.current.position.z = Math.sin(angle) * r;
+                    break;
+            }
+        }
+    });
 
-    // --- VIZ MODE LOGIC ---
-    if (vizMode === 'cloud') {
-      // If "cloud", apply the random orbital plane rotation
-      position.applyQuaternion(orbitalPlane);
-    }
-    // If "bohr", we don't apply the rotation, so it stays flat
+    return (
+        <Sphere ref={ref} args={[0.08, 16, 16]}>
+            <meshStandardMaterial
+                color={color}
+                emissive={color}
+                emissiveIntensity={3}
+                toneMapped={false}
+            />
+        </Sphere>
+    );
+}
 
-    ref.current.position.copy(position);
-  });
+// Represents the nucleus (protons + neutrons)
+interface NucleusProps {
+    protons: number;
+    neutrons: number;
+    protonColor: Color;
+    neutronColor: Color;
+}
 
-  const { isAntimatter } = useBuilder();
-  // --- ANTIMATTER LOGIC: Flipped color ---
-  const electronColor = isAntimatter ? "#FF0066" : "#00FFFF"; // Positron = red/pink
+function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps) {
+    const groupRef = useRef<THREE.Group>(null!);
+    const totalParticles = protons + neutrons;
+    const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08); // Scale nucleus size
 
-  return (
-    <Sphere ref={ref} args={[0.08, 16, 16]}>
-      {/* A material that glows */}
-      <meshStandardMaterial color={electronColor} emissive={electronColor} emissiveIntensity={2} />
-    </Sphere>
-  );
-};
+    // Memoize particle positions for performance
+    const particles = useMemo(() => {
+        const arr = [];
+        const particleRadius = 0.05; // Smaller radius for individual nucleons
 
-// Component for a single Electron Shell (the orbit line)
-const ElectronShell = ({ radius, vizMode }: { radius: number, vizMode: 'bohr' | 'cloud' }) => {
-  const points = useMemo(() => {
-    const p = [];
-    // Create a circle from 64 points
-    for (let i = 0; i <= 64; i++) {
-      const angle = (i / 64) * Math.PI * 2;
-      p.push(new THREE.Vector3(radius * Math.cos(angle), 0, radius * Math.sin(angle)));
-    }
-    return p;
-  }, [radius]);
+        for (let i = 0; i < totalParticles; i++) {
+            const point = new THREE.Vector3();
+            // Distribute points somewhat randomly within the nucleus sphere
+            point.set(
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1
+            );
+            if (point.length() === 0) point.set(1, 0, 0); // Avoid center
+            point.normalize().multiplyScalar(Math.random() * (radius - particleRadius));
 
-  // --- VIZ MODE LOGIC: Hide shells in cloud mode ---
-  if (vizMode === 'cloud') {
-    return null;
-  }
+            arr.push({
+                position: point.toArray(), // Store as array [x, y, z]
+                color: i < protons ? protonColor : neutronColor,
+            });
+        }
+        return arr;
+    }, [protons, neutrons, radius, protonColor, neutronColor, totalParticles]); // Added missing dependencies
 
-  return (
-    <line loop args={[new THREE.BufferGeometry().setFromPoints(points)]}>
-      <lineBasicMaterial color="#0FF" transparent opacity={0.3} />
-    </line>
-  );
-};
 
-// Main Scene
-const AtomScene = () => {
-  const { atom, vizMode, isAntimatter } = useBuilder();
-  
-  // Calculate a dynamic nucleus size based on particle count
-  const nucleusRadius = Math.max(0.2, 1 + (atom.protons + atom.neutrons - 1) * 0.02);
+    useFrame(() => {
+        // Subtle rotation for visual interest
+        if (groupRef.current) {
+            groupRef.current.rotation.y += 0.001;
+            groupRef.current.rotation.x += 0.0005;
+        }
+    });
 
-  const shells = useMemo(() => calculateElectronShells(atom.electrons), [atom.electrons]);
-
-  // --- ANTIMATTER LOGIC: Flipped colors ---
-  const protonColor = isAntimatter ? "#00FFFF" : "#FF0066"; // Anti-proton = blue
-  const neutronColor = isAntimatter ? "#AA00FF" : "#9F00FF"; // Anti-neutron = slightly different purple
-
-  return (
-    <>
-      <ambientLight intensity={0.2} />
-      <pointLight position={[5, 5, 5]} intensity={1} />
-      
-      {/* Nucleus Group */}
-      <group>
-        {/* Protons */}
-        {Array.from({ length: atom.protons }).map((_, i) => (
-          // We give each particle a random position within the nucleus radius
-          <Sphere key={`p-${i}`} args={[0.2, 16, 16]} position={[(Math.random() - 0.5) * nucleusRadius, (Math.random() - 0.5) * nucleusRadius, (Math.random() - 0.5) * nucleusRadius]}>
-            <meshStandardMaterial color={protonColor} emissive={protonColor} emissiveIntensity={1} />
-          </Sphere>
-        ))}
-        {/* Neutrons */}
-        {Array.from({ length: atom.neutrons }).map((_, i) => (
-          <Sphere key={`n-${i}`} args={[0.2, 16, 16]} position={[(Math.random() - 0.5) * nucleusRadius, (Math.random() - 0.5) * nucleusRadius, (Math.random() - 0.5) * nucleusRadius]}>
-            <meshStandardMaterial color={neutronColor} emissive={neutronColor} emissiveIntensity={1} />
-          </Sphere>
-        ))}
-      </group>
-
-      {/* Electron Shells and Electrons */}
-      {shells.map((electronCount, shellIndex) => {
-        // Each shell is progressively further out
-        const shellRadius = nucleusRadius + 1.5 + shellIndex * 1.5;
-        return (
-          <group key={`shell-${shellIndex}`}>
-            <ElectronShell radius={shellRadius} vizMode={vizMode} />
-            {Array.from({ length: electronCount }).map((_, electronIndex) => (
-              <Electron
-                key={`e-${shellIndex}-${electronIndex}`}
-                shellRadius={shellRadius}
-                index={electronIndex}
-                totalInShell={electronCount}
-                vizMode={vizMode} // Pass vizMode to electron
-              />
+    return (
+        <group ref={groupRef}>
+            {particles.map((p, i) => (
+                <Sphere key={i} args={[0.05, 16, 16]} position={p.position as [number, number, number]}>
+                    <meshStandardMaterial
+                        color={p.color}
+                        emissive={p.color}
+                        emissiveIntensity={0.3}
+                        roughness={0.6}
+                    />
+                </Sphere>
             ))}
-          </group>
-        );
-      })}
-      
-      {/* Camera controls */}
-      <OrbitControls enableZoom={true} enablePan={true} />
-    </>
-  );
-};
+        </group>
+    );
+}
 
+
+// Draws the orbit line for Bohr model using <primitive>
+interface OrbitLineProps {
+    radius: number;
+    electronColor: Color; // Pass color for the line
+}
+function OrbitLine({ radius, electronColor }: OrbitLineProps) {
+    // --- THIS IS THE CORRECTED CODE ---
+    const line = useMemo(() => {
+        const points = [];
+        const segments = 64;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color: electronColor,
+            transparent: true,
+            opacity: 0.2
+        });
+        // Cleanup function for useMemo
+        return () => {
+             geometry.dispose();
+             material.dispose();
+        };
+    }, [radius, electronColor]); // Recalculate if radius or color changes
+
+    // Create the THREE.Line object outside useMemo
+     const lineObject = useMemo(() => {
+        const points = [];
+        const segments = 64;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ color: electronColor, transparent: true, opacity: 0.2 });
+        return new THREE.Line(geometry, material);
+    }, [radius, electronColor]);
+
+    // Use <primitive> to render the THREE.Line object
+    // Ensure dispose is null
+    return <primitive object={lineObject} dispose={null} />;
+    // --- END CORRECTION ---
+}
+
+
+// Main Scene Component
+function AtomScene() {
+    const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
+
+    const colors = useMemo(() => ({
+        proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
+        neutron: new Color('#888888'),
+        electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'),
+    }), [isAntimatter]);
+
+    const shells = useMemo(() => {
+        let remainingElectrons = electrons;
+        return bohrShells.map(capacity => {
+            const count = Math.min(remainingElectrons, capacity);
+            remainingElectrons -= count;
+            return count;
+        }).filter(count => count > 0);
+    }, [electrons]);
+
+    return (
+        <>
+            <ambientLight intensity={0.5} />
+            <pointLight position={[10, 10, 10]} intensity={1.5} />
+            <pointLight position={[-10, -10, -10]} intensity={0.5} color={colors.proton} />
+
+            <Nucleus
+                protons={protons}
+                neutrons={neutrons}
+                protonColor={colors.proton}
+                neutronColor={colors.neutron}
+            />
+
+            {vizMode === 'bohr' && shells.map((count, index) => {
+                const radius = (index + 1) * 0.7;
+                return (
+                    <group key={`shell-${index}`}>
+                        {/* Ensure OrbitLine uses the electronColor */}
+                        <OrbitLine radius={radius} electronColor={colors.electron} />
+                        {Array.from({ length: count }).map((_, i) => (
+                            <Electron
+                                key={`electron-${index}-${i}`}
+                                radius={radius}
+                                speed={0.5 / (index + 1)}
+                                offset={(i / count) * Math.PI * 2}
+                                color={colors.electron}
+                                orbitAxis="xz" // Bohr model orbits on XZ plane
+                            />
+                        ))}
+                    </group>
+                );
+            })}
+
+            {vizMode === 'cloud' && Array.from({ length: electrons }).map((_, i) => {
+                const baseRadius = 1 + Math.random() * (shells.length || 1) * 0.5;
+                const speed = 0.3 + Math.random() * 0.4;
+                const offset = Math.random() * Math.PI * 2;
+                const axis = ['xy', 'xz', 'yz'][Math.floor(Math.random() * 3)] as 'xy' | 'xz' | 'yz';
+                const orbitEcc = Math.random() * baseRadius * 0.3;
+
+                return (
+                    <Electron
+                        key={`cloud-electron-${i}`}
+                        radius={baseRadius}
+                        speed={speed}
+                        offset={offset}
+                        color={colors.electron}
+                        orbitAxis={axis}
+                        orbitRadius={orbitEcc}
+                    />
+                );
+            })}
+        </>
+    );
+}
+
+// Viewport Wrapper Component
 export default function AtomViewport() {
-  return (
-    <div className="w-full h-full rounded-2xl bg-black">
-      <Canvas camera={{ position: [0, 5, 15], fov: 50 }}>
-        {/* We wrap the scene in React Suspense in case 3D models need to load */}
-        <React.Suspense fallback={null}>
-          <AtomScene />
-        </React.Suspense>
-      </Canvas>
-    </div>
-  );
+    return (
+        <Canvas camera={{ position: [0, 5, 12], fov: 50 }} className="bg-gray-950 rounded-lg">
+             <color attach="background" args={['#050505']} />
+            <Suspense fallback={null}>
+                <AtomScene />
+                <OrbitControls />
+            </Suspense>
+        </Canvas>
+    );
 }
 
