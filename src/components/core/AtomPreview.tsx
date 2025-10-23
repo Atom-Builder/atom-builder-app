@@ -6,13 +6,10 @@ import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
 
-// Electron calculation/rendering constants
-const bohrShells = [2, 8, 18, 32, 32, 18, 8]; // Max electrons per shell
+// ... (Electron and Nucleus components remain the same) ...
+const bohrShells = [2, 8, 18, 32, 32, 18, 8];
 
-// --- Components ---
-
-// Represents a single electron sphere
-interface ElectronProps {
+interface ElectronProps { /* ... as before ... */
     radius: number;
     speed: number;
     offset: number;
@@ -20,109 +17,66 @@ interface ElectronProps {
     orbitAxis?: 'xy' | 'xz' | 'yz';
     orbitRadius?: number;
 }
-
 function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius = 0 }: ElectronProps) {
     const ref = useRef<THREE.Mesh>(null!);
-
-    useFrame(({ clock }) => {
+    useFrame(({ clock }) => { /* ... as before ... */
         const time = clock.getElapsedTime();
         if (ref.current) {
             const angle = time * speed + offset;
             const r = radius + Math.sin(time * speed * 2 + offset) * orbitRadius;
-
             switch (orbitAxis) {
-                case 'xy':
-                    ref.current.position.x = Math.cos(angle) * r;
-                    ref.current.position.y = Math.sin(angle) * r;
-                    ref.current.position.z = 0;
-                    break;
-                case 'yz':
-                    ref.current.position.x = 0;
-                    ref.current.position.y = Math.cos(angle) * r;
-                    ref.current.position.z = Math.sin(angle) * r;
-                    break;
-                case 'xz':
-                default:
-                    ref.current.position.x = Math.cos(angle) * r;
-                    ref.current.position.y = 0;
-                    ref.current.position.z = Math.sin(angle) * r;
-                    break;
+                case 'xy': ref.current.position.set(Math.cos(angle) * r, Math.sin(angle) * r, 0); break;
+                case 'yz': ref.current.position.set(0, Math.cos(angle) * r, Math.sin(angle) * r); break;
+                case 'xz': default: ref.current.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r); break;
             }
         }
     });
-
     return (
         <Sphere ref={ref} args={[0.08, 16, 16]}>
-            <meshStandardMaterial
-                color={color}
-                emissive={color}
-                emissiveIntensity={3}
-                toneMapped={false}
-            />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={3} toneMapped={false}/>
         </Sphere>
     );
 }
 
-// Represents the nucleus (protons + neutrons)
-interface NucleusProps {
+interface NucleusProps { /* ... as before ... */
     protons: number;
     neutrons: number;
     protonColor: Color;
     neutronColor: Color;
 }
-
 function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps) {
     const groupRef = useRef<THREE.Group>(null!);
     const totalParticles = protons + neutrons;
     const radius = Math.max(0.15, Math.cbrt(totalParticles) * 0.08);
-
-    const particles = useMemo(() => {
+    const particles = useMemo(() => { /* ... as before ... */
         const arr = [];
         const particleRadius = 0.05;
-
         for (let i = 0; i < totalParticles; i++) {
             const point = new THREE.Vector3();
-            point.set(
-                Math.random() * 2 - 1,
-                Math.random() * 2 - 1,
-                Math.random() * 2 - 1
-            );
+            point.set( Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1 );
             if (point.length() === 0) point.set(1, 0, 0);
             point.normalize().multiplyScalar(Math.random() * (radius - particleRadius));
-
-            arr.push({
-                position: point.toArray(),
-                color: i < protons ? protonColor : neutronColor,
-            });
+            arr.push({ position: point.toArray(), color: i < protons ? protonColor : neutronColor });
         }
         return arr;
-        // --- FIX: Corrected dependency array ---
     }, [protons, neutrons, protonColor, neutronColor, radius, totalParticles]);
-    // --- END FIX ---
-
-
-    useFrame(() => {
+    useFrame(() => { /* ... as before ... */
         if (groupRef.current) {
             groupRef.current.rotation.y += 0.001;
             groupRef.current.rotation.x += 0.0005;
         }
     });
-
     return (
         <group ref={groupRef}>
             {particles.map((p, i) => (
                 <Sphere key={i} args={[0.05, 16, 16]} position={p.position as [number, number, number]}>
-                    <meshStandardMaterial
-                        color={p.color}
-                        emissive={p.color}
-                        emissiveIntensity={0.3}
-                        roughness={0.6}
-                    />
+                    <meshStandardMaterial color={p.color} emissive={p.color} emissiveIntensity={0.3} roughness={0.6}/>
                 </Sphere>
             ))}
         </group>
     );
 }
+
 
 // Draws the orbit line for Bohr model
 interface OrbitLineProps {
@@ -130,49 +84,53 @@ interface OrbitLineProps {
     electronColor: Color;
 }
 function OrbitLine({ radius, electronColor }: OrbitLineProps) {
-    const points = useMemo(() => {
-        const pts = [];
+    // --- FIX Starts Here ---
+    // Create the THREE objects explicitly
+    const line = useMemo(() => {
+        const points = [];
         const segments = 64;
         for (let i = 0; i <= segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
-            pts.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+            points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
         }
-        return new THREE.BufferGeometry().setFromPoints(pts); // Create geometry here
-    }, [radius]);
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color: electronColor,
+            transparent: true,
+            opacity: 0.2
+        });
+        // Use THREE.LineSegments or THREE.LineLoop for better performance/appearance if needed
+        return new THREE.Line(geometry, material);
+    }, [radius, electronColor]); // Recalculate if radius or color changes
 
-    // --- FIX Starts Here ---
-    // Use the geometry prop correctly with the R3F <line> primitive
-    // Ensure this syntax is exactly as shown below.
-    return (
-        <line geometry={points}>
-            <lineBasicMaterial color={electronColor} transparent opacity={0.2} />
-        </line>
-    );
+    // Use the <primitive> component to add the THREE object directly
+    return <primitive object={line} />;
     // --- FIX Ends Here ---
 }
 
 
 // Main Scene Component for Preview
-function AtomScene({ protons, neutrons, electrons, isAntimatter }: {
+function AtomScene({ protons, neutrons, electrons, isAntimatter }: { /* ... props ... */
     protons: number;
     neutrons: number;
     electrons: number;
     isAntimatter: boolean;
 }) {
-    const colors = useMemo(() => ({
+    // ... (useMemo for colors and shells remains the same) ...
+    const colors = useMemo(() => ({ /* ... */
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#888888'),
         electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'),
-    }), [isAntimatter]);
-
-    const shells = useMemo(() => {
+     }), [isAntimatter]);
+    const shells = useMemo(() => { /* ... */
         let remainingElectrons = electrons;
         return bohrShells.map(capacity => {
             const count = Math.min(remainingElectrons, capacity);
             remainingElectrons -= count;
             return count;
         }).filter(count => count > 0);
-    }, [electrons]);
+     }, [electrons]);
+
 
     return (
         <>
@@ -187,7 +145,6 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter }: {
                 neutronColor={colors.neutron}
             />
 
-            {/* Always render Bohr for previews */}
             {shells.map((count, index) => {
                  const radius = (index + 1) * 0.7;
                  return (
@@ -211,7 +168,7 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter }: {
 }
 
 // Main Preview Component Wrapper
-export default function AtomPreview({ protons, neutrons, electrons, isAntimatter }: {
+export default function AtomPreview({ protons, neutrons, electrons, isAntimatter }: { /* ... props ... */
     protons: number;
     neutrons: number;
     electrons: number;
