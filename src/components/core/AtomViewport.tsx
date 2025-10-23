@@ -1,3 +1,4 @@
+// Force update: Thursday, October 23, 2025 - Ensuring correct version
 'use client';
 
 import React, { useMemo, useRef, Suspense } from 'react';
@@ -141,15 +142,19 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
     }, [radius, electronColor]);
 
     React.useEffect(() => {
+        // Cleanup function for geometry and material
         return () => {
-            lineObject.geometry.dispose();
-            if (Array.isArray(lineObject.material)) {
-                lineObject.material.forEach(m => m.dispose());
-            } else {
-                lineObject.material.dispose();
+            if (lineObject) {
+                lineObject.geometry?.dispose();
+                if (Array.isArray(lineObject.material)) {
+                    lineObject.material.forEach(m => m?.dispose());
+                } else {
+                    lineObject.material?.dispose();
+                }
             }
         }
-    }, [lineObject]);
+    }, [lineObject]); // Rerun effect if lineObject instance changes
+
 
     return <primitive object={lineObject} dispose={null} />;
 }
