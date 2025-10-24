@@ -1,4 +1,4 @@
-// FINAL VERSION - Enhanced visuals and correct structure
+// FINAL VERSION - Enhanced visuals, correct structure, SMOOTHER animations
 'use client';
 
 // --- IMPORTS: Ensure all are present ---
@@ -6,8 +6,8 @@ import React, { useMemo, useRef, Suspense, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere, Stars } from '@react-three/drei';
 import * as THREE from 'three';
-import { Color } from 'three';
-import { useBuilder } from '@/hooks/useBuilder'; // Keep this for the main component
+import { Color, Vector3 } from 'three'; // Import Vector3 explicitly
+import { useBuilder } from '@/hooks/useBuilder';
 import { useGraphicsSettings } from '@/hooks/useGraphicsSettings';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 // --- END IMPORTS ---
@@ -25,26 +25,34 @@ const NUCLEON_RADIUS = 0.04;
 
 // Represents a single electron sphere
 interface ElectronProps {
-    shellIndex: number; // Used for Bohr speed calculation
+    shellIndex: number;
     radius: number;
-    speedFactor: number; // Base speed multiplier
+    speedFactor: number;
     offset: number;
     color: Color;
     vizMode: 'bohr' | 'cloud';
+    electronIndex: number; // Add index for smoother cloud variations
 }
-function Electron({ shellIndex, radius, speedFactor, offset, color, vizMode }: ElectronProps) {
+function Electron({ shellIndex, radius, speedFactor, offset, color, vizMode, electronIndex }: ElectronProps) {
     const ref = useRef<THREE.Mesh>(null!);
 
-    // Cloud specific random properties (memoized)
+    // Cloud specific properties (memoized) - Less random, more periodic
     const cloudProps = useMemo(() => ({
-        // Elliptical path: randomize x/z radius slightly
-        xRadius: radius * (0.8 + Math.random() * 0.4),
-        zRadius: radius * (0.8 + Math.random() * 0.4),
-        // Random tilt axis for 3D cloud effect
-        axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
-        // Slightly randomized speed for cloud
-        speed: speedFactor * (0.8 + Math.random() * 0.4),
-    }), [radius, speedFactor]); // Only recalculate if radius/speedFactor changes
+        // Base elliptical path variation (less extreme)
+        xRadiusFactor: 0.9 + Math.random() * 0.2, // Between 0.9 and 1.1
+        zRadiusFactor: 0.9 + Math.random() * 0.2,
+        // Axis for slow, periodic wobble (based on electron index for variation)
+        wobbleAxis: new Vector3(
+             Math.sin(electronIndex * 0.5),
+             Math.cos(electronIndex * 0.3),
+             Math.sin(electronIndex * 0.7)
+         ).normalize(),
+        // Slightly randomized base speed (less extreme)
+        speed: speedFactor * (0.9 + Math.random() * 0.2),
+        // Phase offsets for wobble and pulse, based on index
+        wobblePhase: electronIndex * 0.4,
+        pulsePhase: electronIndex * 0.6,
+    }), [radius, speedFactor, electronIndex]); // Recalculate if base props or index change
 
     useFrame(({ clock }) => {
         const time = clock.getElapsedTime();
@@ -52,7 +60,7 @@ function Electron({ shellIndex, radius, speedFactor, offset, color, vizMode }: E
             let angle: number, posX: number, posY: number, posZ: number;
 
             if (vizMode === 'bohr') {
-                // Bohr: Faster speed for inner shells (inverse relationship with radius/index)
+                // Bohr: Faster speed for inner shells
                 const speed = speedFactor / (shellIndex + 1);
                 angle = time * speed + offset;
                 posX = Math.cos(angle) * radius;
@@ -60,15 +68,22 @@ function Electron({ shellIndex, radius, speedFactor, offset, color, vizMode }: E
                 posZ = Math.sin(angle) * radius;
                 ref.current.position.set(posX, posY, posZ);
             } else {
-                // Cloud: Use elliptical path and random axis
+                // Cloud: Smoother variations
                 angle = time * cloudProps.speed + offset;
-                const basePos = new THREE.Vector3(
-                    Math.cos(angle) * cloudProps.xRadius,
-                    0,
-                    Math.sin(angle) * cloudProps.zRadius
-                );
-                // Apply random tilt
-                basePos.applyAxisAngle(cloudProps.axis, Math.PI / 4 + Math.random() * Math.PI / 2); // Vary tilt
+                // Base ellipse
+                posX = Math.cos(angle) * radius * cloudProps.xRadiusFactor;
+                posY = 0;
+                posZ = Math.sin(angle) * radius * cloudProps.zRadiusFactor;
+                const basePos = new Vector3(posX, posY, posZ);
+
+                // Apply a slow, periodic wobble instead of random tilt
+                const wobbleAngle = Math.sin(time * 0.2 + cloudProps.wobblePhase) * 0.3; // Gentle wobble amplitude (0.3 radians)
+                basePos.applyAxisAngle(cloudProps.wobbleAxis, wobbleAngle);
+
+                // Add a gentle pulsing radius variation
+                const pulse = Math.sin(time * 0.5 + cloudProps.pulsePhase) * radius * 0.05; // 5% radius pulse
+                basePos.multiplyScalar(1 + pulse / radius);
+
                 ref.current.position.copy(basePos);
             }
         }
@@ -76,21 +91,20 @@ function Electron({ shellIndex, radius, speedFactor, offset, color, vizMode }: E
 
     return (
         <Sphere ref={ref} args={[ELECTRON_RADIUS, PARTICLE_SEGMENTS, PARTICLE_SEGMENTS]}>
-            {/* Using physical material for better light interaction */}
             <meshPhysicalMaterial
                 color={color}
                 emissive={color}
-                emissiveIntensity={3} // Stronger glow
+                emissiveIntensity={3}
                 roughness={0.2}
                 metalness={0.1}
-                clearcoat={0.5} // Slight glossy coat
-                toneMapped={false} // Ensure glow isn't overly dimmed
+                clearcoat={0.5}
+                toneMapped={false}
             />
         </Sphere>
     );
 }
 
-// Nucleus: Using MeshPhysicalMaterial and subtle nucleon offsets
+// Nucleus: Slow down rotation
 interface NucleusProps {
     protons: number;
     neutrons: number;
@@ -114,13 +128,14 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             arr.push({ position: point.toArray(), color: i < protons ? protonColor : neutronColor });
         }
         return arr;
-    // Correct dependency array
     }, [protons, /* removed neutrons */ protonColor, neutronColor, radius, totalParticles]);
 
     useFrame(() => {
         if (groupRef.current) {
-            groupRef.current.rotation.y += 0.001;
-            groupRef.current.rotation.x += 0.0005;
+            // --- FIX: Slower rotation ---
+            groupRef.current.rotation.y += 0.0005; // Halved speed
+            groupRef.current.rotation.x += 0.00025; // Halved speed
+            // --- END FIX ---
         }
      });
 
@@ -143,7 +158,7 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     );
 }
 
-// OrbitLine: Using <primitive> for reliability, thinner line
+// OrbitLine: Remains the same (<primitive> fix)
 interface OrbitLineProps {
     radius: number;
     electronColor: Color;
@@ -166,8 +181,7 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
         return new THREE.Line(geometry, material);
     }, [radius, electronColor]);
 
-    useEffect(() => { // Changed from React.useEffect to useEffect
-        // Cleanup function for geometry and material
+    useEffect(() => {
         return () => {
             if (lineObject) {
                 lineObject.geometry?.dispose();
@@ -178,15 +192,13 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
                 }
             }
         }
-    }, [lineObject]); // Rerun effect if lineObject instance changes
-
+    }, [lineObject]);
 
     return <primitive object={lineObject} dispose={null} />;
 }
 
 
-// --- REFACTORED AtomScene ---
-// Accepts props, does NOT use useBuilder()
+// Refactored AtomScene: Pass electronIndex to Electron
 interface AtomSceneProps {
     protons: number;
     neutrons: number;
@@ -194,9 +206,7 @@ interface AtomSceneProps {
     isAntimatter: boolean;
     vizMode: 'bohr' | 'cloud';
 }
-
 function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: AtomSceneProps) {
-    // ## VERIFY: NO useBuilder() call should be here ##
     const colors = useMemo(() => ({
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#666666'),
@@ -224,7 +234,10 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
             <directionalLight position={[0, -5, 5]} intensity={0.3} color={colors.electron} />
 
             {/* Background */}
-            <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+            {/* --- FIX: Slower stars --- */}
+            <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={0.5} />
+            {/* --- END FIX --- */}
+
 
             <group key={atomKey}>
                 <Nucleus
@@ -244,10 +257,11 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
                                     key={`electron-${index}-${i}`}
                                     shellIndex={index}
                                     radius={radius}
-                                    speedFactor={1.5}
+                                    speedFactor={1.5} // Base speed factor
                                     offset={(i / count) * Math.PI * 2}
                                     color={colors.electron}
                                     vizMode="bohr"
+                                    electronIndex={i} // Pass index
                                 />
                             ))}
                         </group>
@@ -255,23 +269,21 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
                 })}
 
                 {vizMode === 'cloud' && Array.from({ length: electrons }).map((_, i) => {
-                    let estimatedShell = 0;
-                    let countInShells = 0;
-                    for(let s=0; s < bohrShells.length; s++) {
-                        countInShells += bohrShells[s];
-                        if(i < countInShells) { estimatedShell = s; break; }
-                    }
-                    const baseRadius = (estimatedShell + 1) * 0.7 + (Math.random() - 0.5) * 0.4;
-                    const speedFactor = 1.0;
+                    let estimatedShell = 0; let countInShells = 0;
+                    for(let s=0; s < bohrShells.length; s++) { countInShells += bohrShells[s]; if(i < countInShells) { estimatedShell = s; break; } }
+                    const baseRadius = (estimatedShell + 1) * 0.7 + Math.random() * 0.4; // Slightly different randomness
+                    const speedFactor = 0.8; // Slower base speed for cloud
+
                     return (
                         <Electron
                             key={`cloud-electron-${i}`}
                             shellIndex={estimatedShell}
                             radius={baseRadius}
                             speedFactor={speedFactor}
-                            offset={Math.random() * Math.PI * 2}
+                            offset={Math.random() * Math.PI * 2} // Keep random start phase
                             color={colors.electron}
                             vizMode="cloud"
+                            electronIndex={i} // Pass index
                         />
                     );
                 })}
@@ -279,20 +291,15 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter, vizMode }: Atom
         </Suspense>
     );
 }
-// --- END REFACTOR ---
-
 
 // --- Main Viewport Wrapper Component ---
 export default function AtomViewport() {
-    // Get builder state here in the parent - THIS IS CORRECT
     const { protons, neutrons, electrons, isAntimatter, vizMode } = useBuilder();
     const { settings: graphicsSetting } = useGraphicsSettings();
 
     return (
-        // Use Suspense here to wrap the potentially heavy AtomScene
         <Suspense fallback={<div className="w-full h-full flex items-center justify-center bg-gray-950"><p className="text-gray-500">Loading 3D Viewport...</p></div>}>
             <Canvas camera={{ position: [0, 5, 12], fov: 50 }} className="w-full h-full bg-black">
-                 {/* Pass state down as props */}
                 <AtomScene
                     protons={protons}
                     neutrons={neutrons}
@@ -303,10 +310,18 @@ export default function AtomViewport() {
                 <OrbitControls />
                 {graphicsSetting === 'high' && (
                     <EffectComposer>
-                        <Bloom luminanceThreshold={0.3} luminanceSmoothing={0.9} height={300} intensity={0.8}/>
+                        {/* --- FIX: Softer Bloom --- */}
+                        <Bloom
+                            luminanceThreshold={0.4} // Slightly higher threshold
+                            luminanceSmoothing={0.95} // More smoothing
+                            height={300}
+                            intensity={0.6} // Reduced intensity
+                        />
+                        {/* --- END FIX --- */}
                     </EffectComposer>
                 )}
             </Canvas>
         </Suspense>
     );
 }
+
