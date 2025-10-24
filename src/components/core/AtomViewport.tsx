@@ -1,7 +1,8 @@
+// Force update: Friday, October 24, 2025 - Applying complete rewrite
 'use client';
 
-// --- IMPORTS: Ensure all are present ---
-import React, { useMemo, useRef, Suspense, useEffect } from 'react'; // Added useEffect
+// --- IMPORTS: ENSURE ALL THESE ARE PRESENT ---
+import React, { useMemo, useRef, Suspense, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Sphere, Stars } from '@react-three/drei';
 import * as THREE from 'three';
