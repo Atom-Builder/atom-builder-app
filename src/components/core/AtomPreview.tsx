@@ -6,15 +6,23 @@ import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { Color } from 'three';
 
-// ... (Electron component remains the same) ...
+// Electron calculation/rendering constants
 const bohrShells = [2, 8, 18, 32, 32, 18, 8];
 
-interface ElectronProps { /* ... */
-    radius: number; speed: number; offset: number; color: Color; orbitAxis?: 'xy' | 'xz' | 'yz'; orbitRadius?: number;
+// --- Components ---
+
+// Represents a single electron sphere
+interface ElectronProps {
+    radius: number;
+    speed: number;
+    offset: number;
+    color: Color;
+    orbitAxis?: 'xy' | 'xz' | 'yz';
+    orbitRadius?: number;
 }
 function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius = 0 }: ElectronProps) {
     const ref = useRef<THREE.Mesh>(null!);
-    useFrame(({ clock }) => { /* ... movement logic ... */
+    useFrame(({ clock }) => {
         const time = clock.getElapsedTime();
         if (ref.current) {
             const angle = time * speed + offset;
@@ -33,7 +41,7 @@ function Electron({ radius, speed, offset, color, orbitAxis = 'xz', orbitRadius 
     );
 }
 
-
+// Represents the nucleus (protons + neutrons)
 interface NucleusProps {
     protons: number;
     neutrons: number;
@@ -56,8 +64,8 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
             arr.push({ position: point.toArray(), color: i < protons ? protonColor : neutronColor });
         }
         return arr;
-    // --- FIX: Removed unnecessary 'neutrons' dependency ---
-    }, [protons, protonColor, neutronColor, radius, totalParticles]);
+    // --- FIX: Correct dependency array ---
+    }, [protons, /* removed neutrons */ protonColor, neutronColor, radius, totalParticles]);
     // --- END FIX ---
 
     useFrame(() => {
@@ -77,12 +85,13 @@ function Nucleus({ protons, neutrons, protonColor, neutronColor }: NucleusProps)
     );
 }
 
-// ... (OrbitLine, AtomScene, AtomPreview components remain the same) ...
-interface OrbitLineProps { /* ... */
-    radius: number; electronColor: Color;
+// Draws the orbit line for Bohr model using <primitive>
+interface OrbitLineProps {
+    radius: number;
+    electronColor: Color;
 }
 function OrbitLine({ radius, electronColor }: OrbitLineProps) {
-    const lineObject = useMemo(() => { /* ... <primitive> logic ... */
+    const lineObject = useMemo(() => {
         const points = [];
         const segments = 64;
         for (let i = 0; i <= segments; i++) {
@@ -93,34 +102,53 @@ function OrbitLine({ radius, electronColor }: OrbitLineProps) {
         const material = new THREE.LineBasicMaterial({ color: electronColor, transparent: true, opacity: 0.2 });
         return new THREE.Line(geometry, material);
     }, [radius, electronColor]);
-     React.useEffect(() => { // Cleanup effect
+
+     React.useEffect(() => {
+         // Cleanup function for geometry and material
          return () => {
              lineObject.geometry.dispose();
-             lineObject.material.dispose();
+             // Ensure material is also disposed if it's an array or single
+             if (Array.isArray(lineObject.material)) {
+                 lineObject.material.forEach(m => m.dispose());
+             } else {
+                 lineObject.material.dispose();
+             }
          }
-     }, [lineObject]);
+     }, [lineObject]); // Rerun effect if lineObject instance changes
+
+    // Use <primitive> to render the THREE.Line object
+    // Ensure dispose is null so R3F doesn't double-dispose
     return <primitive object={lineObject} dispose={null} />;
 }
 
-interface AtomSceneProps { /* ... */
-    protons: number; neutrons: number; electrons: number; isAntimatter: boolean;
+
+// Refactored AtomScene - Accepts props
+interface AtomSceneProps {
+    protons: number;
+    neutrons: number;
+    electrons: number;
+    isAntimatter: boolean;
 }
+
 function AtomScene({ protons, neutrons, electrons, isAntimatter }: AtomSceneProps) {
-    const colors = useMemo(() => ({ /* ... */
+    const colors = useMemo(() => ({
         proton: isAntimatter ? new Color('#00FFFF') : new Color('#FF00FF'),
         neutron: new Color('#888888'),
         electron: isAntimatter ? new Color('#FF00FF') : new Color('#00FFFF'),
-     }), [isAntimatter]);
-    const shells = useMemo(() => { /* ... */
+    }), [isAntimatter]);
+
+    const shells = useMemo(() => {
         let remainingElectrons = electrons;
         return bohrShells.map(capacity => {
             const count = Math.min(remainingElectrons, capacity);
             remainingElectrons -= count;
             return count;
         }).filter(count => count > 0);
-     }, [electrons]);
+    }, [electrons]);
+
     return (
-        <> /* ... Scene content ... */
+        // --- FIX: Removed invalid comment ---
+        <>
             <ambientLight intensity={0.6} />
             <pointLight position={[8, 8, 8]} intensity={1.5} />
             <pointLight position={[-8, -8, -8]} intensity={0.5} color={colors.proton} />
@@ -137,11 +165,16 @@ function AtomScene({ protons, neutrons, electrons, isAntimatter }: AtomSceneProp
                  );
             })}
         </>
+        // --- END FIX ---
     );
 }
 
-interface AtomPreviewProps { /* ... */
-    protons: number; neutrons: number; electrons: number; isAntimatter: boolean;
+// Main Preview Component Wrapper
+interface AtomPreviewProps {
+    protons: number;
+    neutrons: number;
+    electrons: number;
+    isAntimatter: boolean;
 }
 export default function AtomPreview({ protons, neutrons, electrons, isAntimatter }: AtomPreviewProps) {
     return (
